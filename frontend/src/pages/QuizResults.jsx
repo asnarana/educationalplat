@@ -311,18 +311,18 @@ function QuizResults() {
           ) : (
             // Full quiz actions
             <>
-              {results.next_quiz_recommendation && !results.mastery_status?.mastered && (
-                <button
-                  className="btn"
+          {results.next_quiz_recommendation && !results.mastery_status?.mastered && (
+            <button
+              className="btn"
                   onClick={handleRetakeFullTest}
-                  disabled={generatingNext}
-                >
+              disabled={generatingNext}
+            >
                   {generatingNext ? 'Generating...' : 'Retake Full Test (70% Focus on Weak Topics)'}
-                </button>
-              )}
-              <button className="btn btn-secondary" onClick={() => navigate('/')}>
-                {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
-              </button>
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={() => navigate('/')}>
+            {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
+          </button>
             </>
           )}
         </div>

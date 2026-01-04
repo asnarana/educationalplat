@@ -6,7 +6,9 @@ python-multipart==0.0.6
 pytest==7.4.3
 pytest-asyncio==0.21.1
 # LLM dependencies (optional - install based on provider choice)
-requests>=2.31.0  # For Ollama
+langchain>=0.1.0  # Langchain framework
+langchain-community>=0.0.10  # Langchain community integrations (includes Ollama)
+requests>=2.31.0  # For Ollama (fallback)
 openai>=1.0.0  # For OpenAI (optional)
 huggingface-hub>=0.19.0  # For HuggingFace (optional)
 
