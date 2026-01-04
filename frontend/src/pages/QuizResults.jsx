@@ -11,6 +11,9 @@ function QuizResults() {
   const [generatingNext, setGeneratingNext] = useState(false);
   const [studentId, setStudentId] = useState(null);
   const [gradeLevel, setGradeLevel] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState(null);
 
   useEffect(() => {
     loadResults();
@@ -144,6 +147,22 @@ function QuizResults() {
       setError(err.message || 'Failed to generate quiz');
     } finally {
       setGeneratingNext(false);
+    }
+  };
+
+  const handleGetFeedback = async () => {
+    if (!attemptId) return;
+
+    setLoadingFeedback(true);
+    setFeedbackError(null);
+
+    try {
+      const feedbackData = await api.getFeedback(Number(attemptId));
+      setFeedback(feedbackData);
+    } catch (err) {
+      setFeedbackError(err.message || 'Failed to generate feedback. Make sure Ollama is running and Langchain packages are installed.');
+    } finally {
+      setLoadingFeedback(false);
     }
   };
 
@@ -281,6 +300,106 @@ function QuizResults() {
               : 'Review all topics'}
           </div>
         )}
+
+        {/* LLM Feedback Section */}
+        <div style={{ marginTop: '30px', padding: '20px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3 style={{ margin: 0 }}>🤖 Personalized Feedback (AI-Powered)</h3>
+            {!feedback && (
+              <button
+                className="btn"
+                onClick={handleGetFeedback}
+                disabled={loadingFeedback}
+                style={{ backgroundColor: '#007bff', color: 'white' }}
+              >
+                {loadingFeedback ? 'Generating...' : 'Get AI Feedback'}
+              </button>
+            )}
+          </div>
+
+          {feedbackError && (
+            <div style={{ padding: '15px', background: '#f8d7da', color: '#721c24', borderRadius: '5px', marginBottom: '15px' }}>
+              <strong>Error:</strong> {feedbackError}
+              <div style={{ marginTop: '10px', fontSize: '14px' }}>
+                <p>Make sure:</p>
+                <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
+                  <li>Ollama is running (check with: <code>ollama list</code>)</li>
+                  <li>Langchain packages are installed: <code>pip install langchain langchain-community</code></li>
+                  <li>You have a model pulled: <code>ollama pull phi</code> or <code>ollama pull llama2</code></li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {loadingFeedback && (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+              <div>🔄 Generating personalized feedback with AI...</div>
+              <div style={{ marginTop: '10px', fontSize: '14px' }}>This may take 10-30 seconds</div>
+            </div>
+          )}
+
+          {feedback && (
+            <div>
+              {feedback.summary && (
+                <div style={{ marginBottom: '20px', padding: '15px', background: '#e7f3ff', borderRadius: '5px' }}>
+                  <strong style={{ fontSize: '16px' }}>📝 Summary:</strong>
+                  <p style={{ marginTop: '10px', marginBottom: 0, lineHeight: '1.6' }}>{feedback.summary}</p>
+                </div>
+              )}
+
+              {feedback.topics && Object.keys(feedback.topics).length > 0 && (
+                <div>
+                  <h4 style={{ marginBottom: '15px' }}>Study Recommendations:</h4>
+                  {Object.entries(feedback.topics).map(([topic, topicData]) => (
+                    <div key={topic} style={{ marginBottom: '25px', padding: '15px', background: 'white', borderRadius: '5px', border: '1px solid #dee2e6' }}>
+                      <h5 style={{ marginTop: 0, marginBottom: '15px', color: '#007bff' }}>{topic}</h5>
+                      
+                      {topicData.actions && topicData.actions.length > 0 && (
+                        <div style={{ marginBottom: '20px' }}>
+                          <strong>💡 Study Actions:</strong>
+                          <ul style={{ marginTop: '10px', marginBottom: 0, paddingLeft: '20px' }}>
+                            {topicData.actions.map((action, idx) => (
+                              <li key={idx} style={{ marginBottom: '8px', lineHeight: '1.5' }}>{action}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {topicData.practice && topicData.practice.length > 0 && (
+                        <div>
+                          <strong>📚 Practice Questions:</strong>
+                          {topicData.practice.map((practiceQ, idx) => (
+                            <div key={idx} style={{ marginTop: '15px', padding: '15px', background: '#f8f9fa', borderRadius: '5px' }}>
+                              <div style={{ marginBottom: '10px' }}>
+                                <strong>Q{idx + 1}:</strong> {practiceQ.q}
+                              </div>
+                              <div style={{ marginBottom: '10px', paddingLeft: '15px' }}>
+                                <strong>Answer:</strong> {practiceQ.answer}
+                              </div>
+                              {practiceQ.explanation && (
+                                <div style={{ paddingLeft: '15px', color: '#666', fontStyle: 'italic' }}>
+                                  <strong>Explanation:</strong> {practiceQ.explanation}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                className="btn btn-secondary"
+                onClick={() => setFeedback(null)}
+                style={{ marginTop: '15px' }}
+              >
+                Hide Feedback
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="actions">
           {isPracticeQuiz ? (

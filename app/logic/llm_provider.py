@@ -1,6 +1,6 @@
 """
 LLM provider abstraction for pluggable model support.
-Supports Ollama (local), OpenAI, and HuggingFace.
+Supports Ollama (local via Langchain), OpenAI, and HuggingFace.
 """
 import os
 import json
@@ -18,46 +18,40 @@ class LLMProvider(ABC):
 
 
 class OllamaProvider(LLMProvider):
-    """Ollama provider for local LLM inference."""
+    """Ollama provider for local LLM inference using Langchain."""
     
     def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434"):
         """
-        Initialize Ollama provider.
+        Initialize Ollama provider with Langchain.
         
         Args:
-            model: Model name (e.g., "llama2", "mistral", "codellama")
+            model: Model name (e.g., "llama2", "mistral", "phi", "llama3", "codellama")
             base_url: Ollama API base URL
         """
         try:
-            import requests
-            self.requests = requests
+            from langchain_ollama import OllamaLLM
+            self.llm = OllamaLLM(
+                model=model,
+                base_url=base_url,
+                temperature=0.7,
+                top_p=0.9,
+            )
         except ImportError:
-            raise ImportError("requests library required for Ollama. Install with: pip install requests")
+            raise ImportError(
+                "langchain-ollama library required for Ollama. "
+                "Install with: pip install langchain langchain-ollama"
+            )
         
         self.model = model
         self.base_url = base_url
     
     def generate(self, prompt: str) -> str:
-        """Generate response using Ollama API."""
+        """Generate response using Langchain Ollama integration."""
         try:
-            response = self.requests.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.7,
-                        "top_p": 0.9,
-                    }
-                },
-                timeout=120
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result.get("response", "")
+            response = self.llm.invoke(prompt)
+            return response.strip() if response else ""
         except Exception as e:
-            raise RuntimeError(f"Ollama API error: {str(e)}")
+            raise RuntimeError(f"Ollama (Langchain) error: {str(e)}")
 
 
 class OpenAIProvider(LLMProvider):
@@ -144,10 +138,12 @@ def get_llm_provider() -> LLMProvider:
     - LLM_PROVIDER: "ollama", "openai", or "huggingface" (default: "ollama")
     - OLLAMA_MODEL: Model name for Ollama (default: "llama2")
     - OLLAMA_BASE_URL: Ollama base URL (default: "http://localhost:11434")
-    - OPENAI_API_KEY: API key for OpenAI
+    - OPENAI_API_KEY: API key for OpenAI (optional, paid)
     - OPENAI_MODEL: Model name for OpenAI (default: "gpt-3.5-turbo")
-    - HUGGINGFACE_API_KEY: API key for HuggingFace
+    - HUGGINGFACE_API_KEY: API key for HuggingFace (optional, paid)
     - HUGGINGFACE_MODEL: Model ID for HuggingFace
+    
+    Note: Ollama is free and runs locally. OpenAI and HuggingFace require API keys and may cost money.
     
     Returns:
         LLMProvider instance
