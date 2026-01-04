@@ -59,7 +59,7 @@ def test_get_recent_question_ids(db_session, sample_questions):
     db_session.add_all([quiz1, quiz2])
     db_session.commit()
     
-    recent_ids = get_recent_question_ids(db_session, "student1", num_quizzes=2)
+    recent_ids = get_recent_question_ids(db_session, "student1", grade_level=3, num_quizzes=2)
     assert len(recent_ids) == 10
     assert all(i in recent_ids for i in range(1, 11))
 
@@ -107,9 +107,23 @@ def test_check_mastery_status(db_session):
     """Test checking mastery status."""
     from app.models import Attempt
     
+    # Create quizzes first (attempts need quiz_id to exist)
+    quiz1 = Quiz(
+        student_id="student1",
+        grade_level=3,
+        question_ids=[1, 2, 3]
+    )
+    quiz2 = Quiz(
+        student_id="student1",
+        grade_level=3,
+        question_ids=[4, 5, 6]
+    )
+    db_session.add_all([quiz1, quiz2])
+    db_session.commit()
+    
     # Create attempts with no weak topics (mastered)
     attempt1 = Attempt(
-        quiz_id=1,
+        quiz_id=quiz1.id,
         student_id="student1",
         answers={},
         score_total=0.9,
@@ -118,7 +132,7 @@ def test_check_mastery_status(db_session):
         passed=True
     )
     attempt2 = Attempt(
-        quiz_id=2,
+        quiz_id=quiz2.id,
         student_id="student1",
         answers={},
         score_total=0.95,
@@ -129,7 +143,7 @@ def test_check_mastery_status(db_session):
     db_session.add_all([attempt1, attempt2])
     db_session.commit()
     
-    status = check_mastery_status(db_session, "student1")
+    status = check_mastery_status(db_session, "student1", grade_level=3)
     assert status["mastered"] is True
     assert status["consecutive_passes"] == 2
 

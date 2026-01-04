@@ -22,7 +22,7 @@ Minimal React + Vite web UI for the GradeMaster adaptive quiz system.
    npm run dev
    ```
 
-   The UI will be available at `http://localhost:3000`
+   The UI will be available at `http://localhost:5173`
 
 3. **Make sure the FastAPI backend is running**:
    ```bash

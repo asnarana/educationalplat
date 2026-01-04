@@ -57,9 +57,12 @@ def get_student_history(
     for attempt in attempts:
         all_weak_topics.update(attempt.weak_topics)
     
-    # Check mastery status
+    # Group mastery status by grade level
     from app.logic.adaptive import check_mastery_status
-    mastery_status = check_mastery_status(db, student_id, mastery_threshold=0.80)
+    grade_levels = list(set([q.grade_level for q in quizzes]))
+    mastery_by_grade = {}
+    for grade in grade_levels:
+        mastery_by_grade[grade] = check_mastery_status(db, student_id, grade, mastery_threshold=0.80)
     
     return {
         "student_id": student_id,
@@ -68,7 +71,7 @@ def get_student_history(
             "total_attempts": total_attempts,
             "average_score": round(avg_score, 4),
             "all_weak_topics": list(all_weak_topics),
-            "mastery_status": mastery_status
+            "mastery_by_grade": mastery_by_grade
         },
         "history": quiz_history
     }

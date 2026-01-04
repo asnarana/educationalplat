@@ -17,12 +17,52 @@ function StartQuiz() {
 
   const handleSeed = async () => {
     setSeeding(true);
-    setError(null);
+    setError(null); // Clear error at start
+    
+    // First, check if backend is reachable
     try {
+      const healthCheck = await fetch('http://localhost:8000/health');
+      if (!healthCheck.ok) {
+        throw new Error('Backend not responding');
+      }
+    } catch (healthErr) {
+      setError('Cannot connect to backend server! Make sure it\'s running on http://localhost:8000. Start it with: uvicorn app.main:app --reload');
+      setSeeding(false);
+      return;
+    }
+    
+    try {
+      // First try to seed
       await api.seedQuestions();
       alert('Question bank seeded successfully!');
+      setError(null); // Ensure error is cleared on success
     } catch (err) {
-      setError(err.message);
+      // Check if it's a connection error
+      if (err.message.includes('Failed to fetch') || err.message.includes('CONNECTION_REFUSED') || err.name === 'TypeError') {
+        setError('Cannot connect to backend server! Make sure it\'s running on http://localhost:8000. Start it with: uvicorn app.main:app --reload');
+        return;
+      }
+      // If database already has questions, offer to clear and reseed
+      if (err.message.includes('already contains')) {
+        // Clear error immediately before showing confirm
+        setError(null);
+        const shouldClear = confirm(
+          'Database already has questions. Would you like to clear it and reseed with expanded questions?'
+        );
+        if (shouldClear) {
+          try {
+            await api.clearDatabase();
+            await api.seedQuestions();
+            alert('Database cleared and reseeded successfully with all questions!');
+            setError(null); // Clear any errors on success
+          } catch (clearErr) {
+            setError(clearErr.message || 'Failed to clear and reseed database');
+          }
+        }
+        // If user cancels, don't set error (already cleared above)
+      } else {
+        setError(err.message);
+      }
     } finally {
       setSeeding(false);
     }
@@ -39,6 +79,9 @@ function StartQuiz() {
     setError(null);
 
     try {
+      // Clear any practice markers when starting a new main test
+      sessionStorage.removeItem('current_practice_original_attempt');
+      
       const response = await api.generateQuiz(
         studentId.trim(),
         gradeLevel,

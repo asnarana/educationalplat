@@ -5,7 +5,7 @@ import QuizResults from './pages/QuizResults';
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <div className="app">
         <div className="header">
           <h1>GradeMaster</h1>

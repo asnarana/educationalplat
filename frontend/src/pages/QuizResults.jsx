@@ -63,6 +63,90 @@ function QuizResults() {
     }
   };
 
+  const handlePracticeTopic = async (topic) => {
+    if (!studentId || !gradeLevel) {
+      alert('Cannot generate practice quiz. Please start a new quiz from the home page.');
+      return;
+    }
+
+    setGeneratingNext(true);
+    setError(null);
+
+    try {
+      const response = await api.generateTopicPractice(
+        studentId,
+        gradeLevel,
+        topic,
+        7  // 5-7 questions, using 7 as default
+      );
+      
+      // Store the original main test attempt_id so we can navigate back
+      // If this is called from main results, use current attemptId
+      // If this is called from practice results, preserve the original_attempt_id
+      const originalMainAttemptId = results?.original_attempt_id || attemptId;
+      sessionStorage.setItem('current_practice_original_attempt', originalMainAttemptId);
+      
+      // Store quiz in sessionStorage
+      sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
+      navigate(`/quiz/${response.quiz_id}`);
+    } catch (err) {
+      setError(err.message || `Failed to generate practice quiz for ${topic}`);
+    } finally {
+      setGeneratingNext(false);
+    }
+  };
+
+  const handleRetakePractice = async () => {
+    if (!results.practice_topic || !studentId || !gradeLevel) {
+      return;
+    }
+    
+    // Preserve the original main test attempt_id (not the current practice attempt_id)
+    const originalMainAttemptId = results.original_attempt_id || attemptId;
+    sessionStorage.setItem('current_practice_original_attempt', originalMainAttemptId);
+    
+    await handlePracticeTopic(results.practice_topic);
+  };
+
+  const handleBackToMainResults = () => {
+    const originalAttemptId = results.original_attempt_id;
+    // Clear the practice marker when going back to main results
+    sessionStorage.removeItem('current_practice_original_attempt');
+    if (originalAttemptId) {
+      navigate(`/results/${originalAttemptId}`);
+    } else {
+      navigate('/');
+    }
+  };
+
+  const handleRetakeFullTest = async () => {
+    if (!studentId || !gradeLevel || !results.next_quiz_recommendation) {
+      alert('Cannot generate quiz. Please start a new quiz from the home page.');
+      return;
+    }
+
+    setGeneratingNext(true);
+    setError(null);
+
+    try {
+      const rec = results.next_quiz_recommendation;
+      const response = await api.generateQuiz(
+        studentId,
+        gradeLevel,
+        rec.topics,
+        rec.num_questions
+      );
+      
+      // Store quiz in sessionStorage
+      sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
+      navigate(`/quiz/${response.quiz_id}`);
+    } catch (err) {
+      setError(err.message || 'Failed to generate quiz');
+    } finally {
+      setGeneratingNext(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container">
@@ -85,11 +169,28 @@ function QuizResults() {
   const overallScore = (results.score_total * 100).toFixed(1);
   const passed = results.passed;
   const weakTopics = results.weak_topics || [];
+  const isPracticeQuiz = results.is_practice_quiz || false;
+  const practiceTopic = results.practice_topic || null;
+  const topicScore = practiceTopic && results.topic_metrics?.[practiceTopic] 
+    ? (results.topic_metrics[practiceTopic].weighted_score * 100).toFixed(1)
+    : null;
+  const isTopicMastered = topicScore && parseFloat(topicScore) >= 100;
 
   return (
     <div className="container">
       <div className="card">
-        <h2>Quiz Results</h2>
+        <h2>{isPracticeQuiz ? `Practice Results: ${practiceTopic}` : 'Quiz Results'}</h2>
+        
+        {isPracticeQuiz && (
+          <div style={{ marginBottom: '20px', padding: '15px', background: '#e8f5e9', borderRadius: '8px' }}>
+            <strong>Practice Topic:</strong> {practiceTopic}
+            {topicScore && (
+              <div style={{ marginTop: '10px', fontSize: '24px', fontWeight: 'bold', color: isTopicMastered ? '#28a745' : '#ff6b6b' }}>
+                {topicScore}% {isTopicMastered ? '✅ Mastered!' : 'Keep practicing!'}
+              </div>
+            )}
+          </div>
+        )}
         
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
           <div style={{ fontSize: '48px', fontWeight: 'bold', color: passed ? '#28a745' : '#dc3545' }}>
@@ -122,22 +223,54 @@ function QuizResults() {
           })}
         </div>
 
-        {weakTopics.length > 0 && (
+        {weakTopics.length > 0 && !isPracticeQuiz && (
           <div className="weak-topics-list">
             <h3>Topics Needing Improvement</h3>
-            <ul>
+            <p style={{ marginBottom: '15px', color: '#666' }}>
+              Practice these topics with focused quizzes (7 questions each). Practice until you reach 100%:
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
               {weakTopics.map((topic) => (
-                <li key={topic}>{topic}</li>
+                <button
+                  key={topic}
+                  className="btn"
+                  onClick={() => handlePracticeTopic(topic)}
+                  disabled={generatingNext}
+                  style={{ 
+                    minWidth: '150px',
+                    backgroundColor: '#ff6b6b',
+                    color: 'white'
+                  }}
+                >
+                  {generatingNext ? 'Loading...' : `Practice ${topic}`}
+                </button>
               ))}
-            </ul>
+            </div>
           </div>
         )}
 
-        {results.mastery_status && (
+        {results.mastery_status && !isPracticeQuiz && (
           <div style={{ marginTop: '20px', padding: '15px', background: '#f0f7ff', borderRadius: '8px' }}>
-            <strong>Mastery Status:</strong> {results.mastery_status.mastered 
-              ? '✅ Mastered!' 
-              : `${results.mastery_status.consecutive_passes}/${results.mastery_status.required} consecutive perfect attempts needed`}
+            <strong>Grade Level Mastery Status:</strong>
+            {results.mastery_status.mastered ? (
+              <div style={{ marginTop: '10px', color: '#28a745', fontWeight: 'bold' }}>
+                ✅ Grade Level Mastered! You've passed 2 consecutive full tests with no weak topics.
+              </div>
+            ) : (
+              <div style={{ marginTop: '10px' }}>
+                <p style={{ marginBottom: '5px' }}>
+                  To master this grade level, you need to pass <strong>2 consecutive full tests</strong> with no weak topics (all topics ≥ 80%).
+                </p>
+                <p style={{ margin: 0, color: '#666' }}>
+                  Progress: <strong>{results.mastery_status.consecutive_passes}/{results.mastery_status.required}</strong> consecutive perfect attempts
+                </p>
+                {results.mastery_status.consecutive_passes === 1 && (
+                  <p style={{ marginTop: '5px', color: '#28a745', fontSize: '14px' }}>
+                    💡 You're halfway there! Pass one more full test with no weak topics to achieve mastery.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -150,18 +283,48 @@ function QuizResults() {
         )}
 
         <div className="actions">
-          {results.next_quiz_recommendation && !results.mastery_status?.mastered && (
-            <button
-              className="btn"
-              onClick={handleNextQuiz}
-              disabled={generatingNext}
-            >
-              {generatingNext ? 'Generating...' : 'Generate Next Quiz'}
-            </button>
+          {isPracticeQuiz ? (
+            // Practice quiz actions
+            <>
+              {!isTopicMastered && (
+                <button
+                  className="btn"
+                  onClick={handleRetakePractice}
+                  disabled={generatingNext}
+                  style={{ backgroundColor: '#ff6b6b', color: 'white' }}
+                >
+                  {generatingNext ? 'Loading...' : 'Retake Practice (Until 100%)'}
+                </button>
+              )}
+              {results.original_attempt_id && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleBackToMainResults}
+                >
+                  Back to Main Results
+                </button>
+              )}
+              <button className="btn btn-secondary" onClick={() => navigate('/')}>
+                Home
+              </button>
+            </>
+          ) : (
+            // Full quiz actions
+            <>
+              {results.next_quiz_recommendation && !results.mastery_status?.mastered && (
+                <button
+                  className="btn"
+                  onClick={handleRetakeFullTest}
+                  disabled={generatingNext}
+                >
+                  {generatingNext ? 'Generating...' : 'Retake Full Test (70% Focus on Weak Topics)'}
+                </button>
+              )}
+              <button className="btn btn-secondary" onClick={() => navigate('/')}>
+                {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
+              </button>
+            </>
           )}
-          <button className="btn btn-secondary" onClick={() => navigate('/')}>
-            {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
-          </button>
         </div>
       </div>
     </div>

@@ -10,14 +10,16 @@ from app.models import Question, Quiz, Attempt
 def get_recent_question_ids(
     db: Session,
     student_id: str,
+    grade_level: int,
     num_quizzes: int = 2
 ) -> Set[int]:
     """
-    Get question IDs from the last N quizzes for a student.
+    Get question IDs from the last N quizzes for a student at a specific grade level.
     
     Args:
         db: Database session
         student_id: Student identifier
+        grade_level: Grade level to filter quizzes by
         num_quizzes: Number of recent quizzes to check (default 2)
         
     Returns:
@@ -25,7 +27,10 @@ def get_recent_question_ids(
     """
     recent_quizzes = (
         db.query(Quiz)
-        .filter(Quiz.student_id == student_id)
+        .filter(
+            Quiz.student_id == student_id,
+            Quiz.grade_level == grade_level
+        )
         .order_by(Quiz.created_at.desc())
         .limit(num_quizzes)
         .all()
@@ -154,20 +159,39 @@ def select_questions_for_quiz(
                 selected_questions.append(q)
                 selected_ids.add(q.id)
     
+    # Step 4: If still not enough and exclusions are preventing us, try without exclusions
+    if len(selected_questions) < num_questions and exclude_question_ids:
+        remaining_needed = num_questions - len(selected_questions)
+        all_available_no_exclusions = (
+            db.query(Question)
+            .filter(
+                Question.grade_level == grade_level,
+                Question.topic.in_(topics)
+            )
+            .all()
+        )
+        
+        for q in all_available_no_exclusions:
+            if q.id not in selected_ids and len(selected_questions) < num_questions:
+                selected_questions.append(q)
+                selected_ids.add(q.id)
+    
     return selected_questions[:num_questions]
 
 
 def check_mastery_status(
     db: Session,
     student_id: str,
+    grade_level: int,
     mastery_threshold: float = 0.80
 ) -> Dict[str, any]:
     """
-    Check if student has achieved mastery (2 consecutive attempts with no weak topics).
+    Check if student has achieved mastery (2 consecutive attempts with no weak topics) for a specific grade level.
     
     Args:
         db: Database session
         student_id: Student identifier
+        grade_level: Grade level to check mastery for
         mastery_threshold: Mastery threshold (default 0.80)
         
     Returns:
@@ -175,28 +199,31 @@ def check_mastery_status(
     """
     recent_attempts = (
         db.query(Attempt)
-        .filter(Attempt.student_id == student_id)
+        .join(Quiz, Attempt.quiz_id == Quiz.id)
+        .filter(
+            Attempt.student_id == student_id,
+            Quiz.grade_level == grade_level
+        )
         .order_by(Attempt.submitted_at.desc())
         .limit(2)
         .all()
     )
     
-    if len(recent_attempts) < 2:
-        return {
-            "mastered": False,
-            "consecutive_passes": len(recent_attempts),
-            "required": 2
-        }
+    # Count consecutive perfect attempts (no weak topics)
+    consecutive_passes = 0
+    for attempt in recent_attempts:
+        if len(attempt.weak_topics) == 0:
+            consecutive_passes += 1
+        else:
+            # If we hit an attempt with weak topics, break the streak
+            break
     
-    # Check if last 2 attempts have no weak topics
-    all_passed = all(
-        len(attempt.weak_topics) == 0
-        for attempt in recent_attempts[:2]
-    )
+    # Mastery requires 2 consecutive perfect attempts
+    mastered = consecutive_passes >= 2
     
     return {
-        "mastered": all_passed,
-        "consecutive_passes": 2 if all_passed else 0,
+        "mastered": mastered,
+        "consecutive_passes": consecutive_passes,
         "required": 2
     }
 

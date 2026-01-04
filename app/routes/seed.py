@@ -6,6 +6,16 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Question, Base
 from app.db import engine
+# Import expanded questions from root directory
+import importlib.util
+import os
+# Get the project root directory (two levels up from app/routes/seed.py)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+expand_questions_path = os.path.join(project_root, "expand_questions.py")
+spec = importlib.util.spec_from_file_location("expand_questions", expand_questions_path)
+expand_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(expand_module)
+EXPANDED_QUESTIONS = expand_module.EXPANDED_QUESTIONS
 
 router = APIRouter(prefix="/seed", tags=["seed"])
 
@@ -24,12 +34,13 @@ def seed_questions(db: Session = Depends(get_db)):
     if existing_count > 0:
         raise HTTPException(
             status_code=400,
-            detail=f"Database already contains {existing_count} questions. Clear database first if you want to reseed."
+            detail=f"Database already contains {existing_count} questions. Use POST /seed/clear to clear the database first, then seed again."
         )
     
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
     
+    # Start with base questions
     questions_data = [
         # Grade 3 Questions
         {
@@ -236,14 +247,49 @@ def seed_questions(db: Session = Depends(get_db)):
         },
     ]
     
+    # Automatically include expanded questions
+    questions_data.extend(EXPANDED_QUESTIONS)
+    
     questions = [Question(**q_data) for q_data in questions_data]
     db.add_all(questions)
     db.commit()
     
     return {
-        "message": f"Successfully seeded {len(questions)} questions",
+        "message": f"Successfully seeded {len(questions)} questions (including expanded question bank)",
         "questions_created": len(questions),
         "grade_levels": [3, 5],
-        "topics_per_grade": 5
+        "topics_per_grade": 5,
+        "includes_expanded": True
     }
+
+
+@router.post("/clear", status_code=200)
+def clear_database(db: Session = Depends(get_db)):
+    """
+    Clear all data from the database (questions, quizzes, attempts).
+    
+    WARNING: This will delete all data! Use with caution.
+    """
+    from app.models import Attempt, Quiz, Question
+    
+    try:
+        # Delete all attempts
+        db.query(Attempt).delete()
+        # Delete all quizzes
+        db.query(Quiz).delete()
+        # Delete all questions
+        db.query(Question).delete()
+        db.commit()
+        
+        return {
+            "message": "Database cleared successfully",
+            "note": "You can now seed the question bank again with /seed endpoint"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error clearing database: {str(e)}")
+
+
+# Note: The /expand endpoint has been removed.
+# Expanded questions are now automatically included when seeding via /seed endpoint.
 

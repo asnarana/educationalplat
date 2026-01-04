@@ -598,7 +598,7 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000` in your browser.
+Then open `http://localhost:5173` in your browser.
 
 The UI provides:
 - Start Quiz page to begin a new quiz
@@ -617,7 +617,7 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000` in your browser.
+Then open `http://localhost:5173` in your browser.
 
 The UI provides:
 - **Start Quiz** page to begin a new quiz

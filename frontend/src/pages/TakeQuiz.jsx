@@ -50,12 +50,27 @@ function TakeQuiz() {
 
     try {
       const response = await api.submitQuiz(Number(quizId), answers);
+      // Check if this is a practice quiz (single topic)
+      const topics = [...new Set(quiz.questions.map(q => q.topic))];
+      const isPracticeQuiz = topics.length === 1;
+      const practiceTopic = isPracticeQuiz ? topics[0] : null;
+      
+      // Get the original main test attempt_id (don't clear it yet - we need it for retakes)
+      const originalMainAttemptId = sessionStorage.getItem('current_practice_original_attempt');
+      
       // Store results in sessionStorage for QuizResults to access
       sessionStorage.setItem(`attempt_${response.attempt_id}`, JSON.stringify({
         ...response,
         student_id: quiz.student_id,
         grade_level: quiz.grade_level,
+        is_practice_quiz: isPracticeQuiz,
+        practice_topic: practiceTopic,
+        original_attempt_id: isPracticeQuiz ? originalMainAttemptId : null,
       }));
+      
+      // Don't clear the practice original attempt marker - we need it for retakes
+      // It will be cleared when user goes back to main results or starts a new main test
+      
       navigate(`/results/${response.attempt_id}`);
     } catch (err) {
       setError(err.message || 'Failed to submit quiz');
@@ -105,7 +120,7 @@ function TakeQuiz() {
         {error && <div className="error">{error}</div>}
 
         {quiz.questions.map((question, index) => (
-          <div key={question.id} className="question-card">
+          <div key={`${question.id}-${index}`} className="question-card">
             <div className="question-header">
               <span>Question {index + 1} of {quiz.questions.length}</span>
               <span className="question-topic">{question.topic}</span>

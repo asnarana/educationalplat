@@ -41,6 +41,11 @@ class ApiClient {
     return this.request('/seed', { method: 'POST' });
   }
 
+  // Clear database
+  async clearDatabase() {
+    return this.request('/seed/clear', { method: 'POST' });
+  }
+
   // Generate quiz
   async generateQuiz(studentId, gradeLevel, topics, numQuestions = 10) {
     return this.request('/quiz/generate', {
@@ -49,6 +54,19 @@ class ApiClient {
         student_id: studentId,
         grade_level: gradeLevel,
         topics: topics,
+        num_questions: numQuestions,
+      },
+    });
+  }
+
+  // Generate topic-specific practice quiz
+  async generateTopicPractice(studentId, gradeLevel, topic, numQuestions = 6) {
+    return this.request('/quiz/practice-topic', {
+      method: 'POST',
+      body: {
+        student_id: studentId,
+        grade_level: gradeLevel,
+        topic: topic,
         num_questions: numQuestions,
       },
     });
