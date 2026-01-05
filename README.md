@@ -1,8 +1,8 @@
-# GradeMaster - Adaptive Quiz System
+#  Adaptive Quiz System
 
 A quiz app that figures out what topics you're struggling with and gives you more practice on those areas. Built with FastAPI and React.
 
-**Note**: The AI feedback feature is totally optional and works for free with Ollama (runs on your computer, no API costs). See the setup section below if you want to use it.
+**Note**: The AI feedback feature is totally optional and works for free with Ollama ( right now its this, we can change later on)
 
 ## What It Does
 
@@ -173,7 +173,7 @@ Get personalized study tips and practice questions. Requires LLM setup (see belo
 
 The AI feedback feature is completely optional. Everything else works fine without it.
 
-### Using Ollama (Free, Recommended)
+### Using Ollama (Free, Recommended)  - This is not working here , I need help properly integrating this LLM or any type of LLM for results(areas student should be able to improve on).
 
 Ollama runs AI models on your computer - no API keys, no costs, completely free.
 
@@ -236,17 +236,17 @@ The TTS feature lets you listen to questions and feedback. It's completely optio
 
 ### Browser TTS (Recommended - Already Works!)
 
-The frontend uses your browser's built-in text-to-speech. Just click the 🔊 button next to questions - no setup needed!
+The frontend uses your browser's built-in text-to-speech. Just click the 🔊 button next to questions - no setup needed
 
 ### Backend TTS (Optional)
 
 If you want backend TTS (for API use), you can install Piper TTS:
 
 ```bash
-pip install piper-tts
+pip install piper-tts 
 ```
+I tried to use the pip install above but was not working no matter how many times I installed it. 
 
-That's it - Piper will download voices automatically when you first use it.
 
 ## How Scoring Works
 
@@ -264,38 +264,3 @@ That's it - Piper will download voices automatically when you first use it.
 ## Database
 
 Uses SQLite - the database file `grademaster.db` is created automatically in the project root. No setup needed.
-
-## Testing
-
-Run tests with:
-```bash
-pytest tests/
-```
-
-## API Docs
-
-Once the backend is running, check out:
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## Troubleshooting
-
-**Backend won't start?**
-- Make sure you're in the virtual environment
-- Check that port 8000 isn't already in use
-
-**Frontend won't start?**
-- Make sure you ran `npm install` in the frontend directory
-- Check that port 5173 isn't already in use
-
-**AI feedback not working?**
-- Make sure Ollama is running (`ollama list` should work)
-- Check that you set the environment variables
-- Restart the backend after setting environment variables
-
-**Questions not showing up?**
-- Make sure you seeded the database (click "Seed Question Bank" or use the `/seed` endpoint)
-
-## License
-
-This is a proof-of-concept project. Use it however you want!
