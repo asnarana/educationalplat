@@ -113,15 +113,102 @@ class PiperProvider(TTSProvider):
     
     def _synthesize_python_api(self, text: str, voice: str) -> Tuple[bytes, str]:
         """Synthesize using Python API."""
-        import piper
         from piper import PiperVoice
-        from piper.download import ensure_voice_exists
+        from pathlib import Path
+        import os
         
-        # Ensure voice exists (downloads if needed)
-        voice_path = ensure_voice_exists(voice, [])
+        # Determine download directory (where piper stores voices)
+        if os.name == "nt":  # Windows
+            download_dir = Path(os.getenv("APPDATA", "")) / "piper" / "voices"
+        else:  # Linux/Mac
+            download_dir = Path.home() / ".local" / "share" / "piper" / "voices"
         
-        # Load voice
-        voice_model = PiperVoice.load(voice_path)
+        # Ensure download directory exists
+        download_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Look for voice files in download directory
+        voice_path = None
+        json_path = None
+        
+        # Try to find existing voice files in multiple locations
+        # Note: JSON file can be either {voice}.json or {voice}.onnx.json
+        search_locations = [
+            # Standard download directory with subdirectory
+            (download_dir / voice / f"{voice}.onnx", download_dir / voice / f"{voice}.json"),
+            (download_dir / voice / f"{voice}.onnx", download_dir / voice / f"{voice}.onnx.json"),
+            # Standard download directory without subdirectory
+            (download_dir / f"{voice}.onnx", download_dir / f"{voice}.json"),
+            (download_dir / f"{voice}.onnx", download_dir / f"{voice}.onnx.json"),
+            # Project root (where download_voices sometimes puts files)
+            (Path(".") / f"{voice}.onnx", Path(".") / f"{voice}.json"),
+            (Path(".") / f"{voice}.onnx", Path(".") / f"{voice}.onnx.json"),
+            # Home directory
+            (Path.home() / f"{voice}.onnx", Path.home() / f"{voice}.json"),
+            (Path.home() / f"{voice}.onnx", Path.home() / f"{voice}.onnx.json"),
+        ]
+        
+        for onnx_file, json_file in search_locations:
+            if onnx_file.exists():
+                # If the specified json_file doesn't exist, try the alternative
+                if not json_file.exists():
+                    # Try .onnx.json if we were looking for .json
+                    if json_file.suffix == '.json' and not json_file.name.endswith('.onnx.json'):
+                        alt_json = json_file.parent / f"{voice}.onnx.json"
+                        if alt_json.exists():
+                            json_file = alt_json
+                    # Try .json if we were looking for .onnx.json
+                    elif json_file.name.endswith('.onnx.json'):
+                        alt_json = json_file.parent / f"{voice}.json"
+                        if alt_json.exists():
+                            json_file = alt_json
+                
+                if json_file.exists():
+                    voice_path = onnx_file
+                    json_path = json_file
+                    break
+        
+        # If voice not found, try to download it
+        if voice_path is None or not voice_path.exists():
+            try:
+                import piper.download_voices
+                # download_voice requires download_dir parameter
+                piper.download_voices.download_voice(voice, download_dir)
+                # After download, check again
+                if (download_dir / voice / f"{voice}.onnx").exists():
+                    voice_path = download_dir / voice / f"{voice}.onnx"
+                    json_path = download_dir / voice / f"{voice}.json"
+                elif (download_dir / f"{voice}.onnx").exists():
+                    voice_path = download_dir / f"{voice}.onnx"
+                    json_path = download_dir / f"{voice}.json"
+            except Exception as e:
+                raise RuntimeError(
+                    f"Voice model '{voice}' not found and could not be downloaded. "
+                    f"Error: {str(e)}. "
+                    f"Try downloading manually: python -m piper.download_voices {voice}"
+                )
+        
+        # Verify files exist
+        if voice_path is None or not voice_path.exists():
+            raise RuntimeError(
+                f"Voice model '{voice}' not found. "
+                f"Download using: python -m piper.download_voices {voice}"
+            )
+        
+        if json_path is None or not json_path.exists():
+            # Try both naming conventions: .json and .onnx.json
+            json_path = voice_path.with_suffix('.json')
+            if not json_path.exists():
+                # Try .onnx.json extension
+                json_path = voice_path.parent / f"{voice_path.stem}.onnx.json"
+            
+            if not json_path.exists():
+                raise RuntimeError(
+                    f"Voice config file not found for '{voice}'. "
+                    f"Looked for: {voice_path.with_suffix('.json')} and {voice_path.parent / f'{voice_path.stem}.onnx.json'}"
+                )
+        
+        # Load voice model
+        voice_model = PiperVoice.load(str(voice_path), str(json_path))
         
         # Synthesize
         audio_stream = io.BytesIO()

@@ -14,9 +14,21 @@ function QuizResults() {
   const [feedback, setFeedback] = useState(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState(null);
+  const [playingAudio, setPlayingAudio] = useState(null);
 
   useEffect(() => {
     loadResults();
+    
+    // Load voices for Web Speech API (needed for some browsers)
+    if ('speechSynthesis' in window) {
+      const loadVoices = () => {
+        window.speechSynthesis.getVoices();
+      };
+      loadVoices();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+      }
+    }
   }, [attemptId]);
 
   const loadResults = async () => {
@@ -163,6 +175,60 @@ function QuizResults() {
       setFeedbackError(err.message || 'Failed to generate feedback. Make sure Ollama is running and Langchain packages are installed.');
     } finally {
       setLoadingFeedback(false);
+    }
+  };
+
+  const handlePlayText = async (text) => {
+    if (playingAudio) {
+      // Stop current speech
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setPlayingAudio(null);
+      return;
+    }
+
+    // Use browser's built-in Web Speech API (free, no backend needed)
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Configure voice settings
+      utterance.rate = 1.2; // Slightly faster speed
+      utterance.pitch = 1.0; // Normal pitch
+      utterance.volume = 1.0; // Full volume
+      
+      // Try to use a natural-sounding voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(v => 
+        v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Neural'))
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+      
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+      
+      utterance.onend = () => {
+        setPlayingAudio(null);
+      };
+      
+      utterance.onerror = (e) => {
+        // Ignore 'interrupted' errors (happens when stopping speech)
+        if (e.error !== 'interrupted') {
+          console.error('Speech synthesis error:', e);
+          setPlayingAudio(null);
+          // Only alert for non-interrupted errors
+          if (e.error !== 'canceled') {
+            alert('Failed to speak text. Please try again.');
+          }
+        } else {
+          setPlayingAudio(null);
+        }
+      };
+      
+      setPlayingAudio(utterance);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      alert('Text-to-speech is not supported in your browser. Please use a modern browser like Chrome, Edge, or Firefox.');
     }
   };
 
@@ -342,7 +408,24 @@ function QuizResults() {
             <div>
               {feedback.summary && (
                 <div style={{ marginBottom: '20px', padding: '15px', background: '#e7f3ff', borderRadius: '5px' }}>
-                  <strong style={{ fontSize: '16px' }}>📝 Summary:</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong style={{ fontSize: '16px' }}>📝 Summary:</strong>
+                    <button
+                      onClick={() => handlePlayText(feedback.summary)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: playingAudio ? '#dc3545' : '#28a745',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                      title="Listen to summary"
+                    >
+                      {playingAudio ? '⏸️ Stop' : '🔊 Listen'}
+                    </button>
+                  </div>
                   <p style={{ marginTop: '10px', marginBottom: 0, lineHeight: '1.6' }}>{feedback.summary}</p>
                 </div>
               )}

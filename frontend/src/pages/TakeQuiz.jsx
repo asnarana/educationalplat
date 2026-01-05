@@ -10,9 +10,21 @@ function TakeQuiz() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [playingAudioId, setPlayingAudioId] = useState(null); // Track which question is playing
 
   useEffect(() => {
     loadQuiz();
+    
+    // Load voices for Web Speech API (needed for some browsers)
+    if ('speechSynthesis' in window) {
+      const loadVoices = () => {
+        window.speechSynthesis.getVoices();
+      };
+      loadVoices();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+      }
+    }
   }, [quizId]);
 
   const loadQuiz = async () => {
@@ -32,6 +44,66 @@ function TakeQuiz() {
       ...prev,
       [questionId]: answer,
     }));
+  };
+
+  const handlePlayQuestion = async (questionText, questionId) => {
+    // If this specific question is already playing, stop it
+    if (playingAudioId === questionId) {
+      // Stop current speech
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setPlayingAudioId(null);
+      return;
+    }
+
+    // Stop any other playing audio first
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
+    // Use browser's built-in Web Speech API (free, no backend needed)
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(questionText);
+      
+      // Configure voice settings
+      utterance.rate = 1.2; // Slightly faster speed
+      utterance.pitch = 1.0; // Normal pitch
+      utterance.volume = 1.0; // Full volume
+      
+      // Try to use a natural-sounding voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(v => 
+        v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Neural'))
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+      
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+      
+      utterance.onend = () => {
+        setPlayingAudioId(null);
+      };
+      
+      utterance.onerror = (e) => {
+        // Ignore 'interrupted' errors (happens when stopping speech)
+        if (e.error !== 'interrupted') {
+          console.error('Speech synthesis error:', e);
+          setPlayingAudioId(null);
+          // Only alert for non-interrupted errors
+          if (e.error !== 'canceled') {
+            alert('Failed to speak text. Please try again.');
+          }
+        } else {
+          setPlayingAudioId(null);
+        }
+      };
+      
+      setPlayingAudioId(questionId);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      alert('Text-to-speech is not supported in your browser. Please use a modern browser like Chrome, Edge, or Firefox.');
+    }
   };
 
   const handleSubmit = async () => {
@@ -125,7 +197,24 @@ function TakeQuiz() {
               <span>Question {index + 1} of {quiz.questions.length}</span>
               <span className="question-topic">{question.topic}</span>
             </div>
-            <div className="question-prompt">{question.prompt}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <div className="question-prompt" style={{ flex: 1 }}>{question.prompt}</div>
+              <button
+                onClick={() => handlePlayQuestion(question.prompt, question.id)}
+                style={{
+                  padding: '8px 12px',
+                  backgroundColor: playingAudioId === question.id ? '#dc3545' : '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+                title="Listen to question"
+              >
+                {playingAudioId === question.id ? '⏸️ Stop' : '🔊 Listen'}
+              </button>
+            </div>
             {question.choices && question.choices.length > 0 ? (
               <ul className="choices">
                 {question.choices.map((choice, idx) => (
