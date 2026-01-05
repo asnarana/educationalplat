@@ -205,7 +205,7 @@ class PiperProvider(TTSProvider):
                 raise RuntimeError(
                     f"Voice config file not found for '{voice}'. "
                     f"Looked for: {voice_path.with_suffix('.json')} and {voice_path.parent / f'{voice_path.stem}.onnx.json'}"
-                )
+                ) 
         
         # Load voice model
         voice_model = PiperVoice.load(str(voice_path), str(json_path))
