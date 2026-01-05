@@ -7,8 +7,8 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 # LLM dependencies (optional - install based on provider choice)
 # FREE: Ollama (local, no API key required)
-langchain>=0.1.0  # Langchain framework
-langchain-ollama>=0.1.0  # Langchain Ollama integration (FREE - newer recommended package)
+langchain>=0.1.0  # LangChain framework
+langchain-ollama>=0.1.0  # LangChain Ollama integration (FREE - uses invoke method like docs)
 # PAID: Optional providers (uncomment if needed)
 # openai>=1.0.0  # For OpenAI (requires API key, costs money)
 # huggingface-hub>=0.19.0  # For HuggingFace (requires API key, may cost money)

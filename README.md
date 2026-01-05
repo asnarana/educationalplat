@@ -1,110 +1,132 @@
-# GradeMaster - Adaptive Remediation Quiz System
+# GradeMaster - Adaptive Quiz System
 
-A FastAPI-based POC for adaptive remediation quizzes that identifies weak topics and generates personalized follow-up quizzes.
+A quiz app that figures out what topics you're struggling with and gives you more practice on those areas. Built with FastAPI and React.
 
-**💡 Free LLM Option**: The Feedback Coach feature works completely free using Ollama (local, no API costs). See [Feedback Coach Setup](#feedback-coach-setup) for details.
+**Note**: The AI feedback feature is totally optional and works for free with Ollama (runs on your computer, no API costs). See the setup section below if you want to use it.
 
-## Features
+## What It Does
 
-- **Diagnostic Quizzes**: 10 questions covering multiple topics (5 topics × 2 questions each)
-- **Deterministic Scoring**: Answer key-based grading with weighted scores per topic
-- **Adaptive Remediation**: Automatically identifies weak topics and generates focused quizzes
-- **Mastery Tracking**: Tracks student progress and determines mastery (2 consecutive attempts with no weak topics)
-- **Question Bank**: Pre-seeded with sample questions for Grade 3 and Grade 5
-- **Feedback Coach** (Optional): LLM-powered personalized feedback with study recommendations and practice questions
+- **Take quizzes**: 10 questions covering different math topics
+- **See your scores**: Get a breakdown by topic so you know what you need to work on
+- **Practice weak areas**: The system automatically gives you more questions on topics you're struggling with (70% focus on weak topics)
+- **Track progress**: Shows when you've mastered a grade level (2 perfect quizzes in a row)
+- **AI feedback** (optional): Get personalized study tips and practice questions using AI
 
 ## Project Structure
 
 ```
 educationalplat/
-├── app/                      # FastAPI backend
-│   ├── __init__.py
-│   ├── main.py              # FastAPI application
-│   ├── models.py            # SQLAlchemy models
+├── app/                      # Backend (FastAPI)
+│   ├── main.py              # Main app file
+│   ├── models.py            # Database models
 │   ├── db.py                # Database setup
 │   ├── logic/
-│   │   ├── __init__.py
-│   │   ├── scoring.py       # Scoring and grading logic
-│   │   ├── adaptive.py      # Adaptive quiz generation
-│   │   ├── llm_provider.py  # LLM provider abstraction (Ollama/OpenAI/HF)
-│   │   ├── feedback.py      # Feedback generation logic
-│   │   └── tts_provider.py  # TTS provider abstraction
-│   ├── prompts/
-│   │   └── feedback_prompt.txt  # LLM prompt template
+│   │   ├── scoring.py       # How we grade quizzes
+│   │   ├── adaptive.py      # Logic for picking questions based on weak topics
+│   │   ├── llm_provider.py  # AI stuff (Ollama/OpenAI)
+│   │   ├── feedback.py      # AI feedback generation
+│   │   └── tts_provider.py  # Text-to-speech
 │   └── routes/
-│       ├── __init__.py
-│       ├── seed.py          # Question bank seeding
-│       ├── quiz.py           # Quiz generation and submission
+│       ├── seed.py          # Populate question bank
+│       ├── quiz.py           # Generate and submit quizzes
 │       ├── history.py        # Student history
-│       ├── feedback.py      # LLM feedback generation
+│       ├── feedback.py      # AI feedback
 │       └── tts.py            # Text-to-speech
-├── frontend/                 # React + Vite web UI
+├── frontend/                 # Web UI (React)
 │   ├── src/
 │   │   ├── pages/           # Page components
 │   │   ├── api/             # API client
 │   │   └── App.jsx          # Main app
 │   └── package.json
-├── tests/
-│   ├── __init__.py
-│   ├── test_scoring.py      # Scoring logic tests
-│   └── test_adaptive.py     # Adaptive logic tests
 ├── requirements.txt
 └── README.md
 ```
 
-## Installation
+## Getting Started
 
-1. **Create a virtual environment** (recommended):
+### Backend Setup
+
+1. **Create a virtual environment** (keeps dependencies clean):
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# On Windows:
+venv\Scripts\activate
+# On Mac/Linux:
+source venv/bin/activate
 ```
 
-2. **Install dependencies**:
+2. **Install Python packages**:
 ```bash
 pip install -r requirements.txt
 ```
 
-   **For Feedback Coach feature**, install additional dependencies based on your LLM provider:
-   - **Ollama** (local): `pip install requests` (already included)
-   - **OpenAI**: `pip install openai`
-   - **HuggingFace**: `pip install huggingface-hub`
-
-3. **Run the application**:
+3. **Run the backend**:
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API will be available at `http://localhost:8000`
+The API will be at `http://localhost:8000`
 
-## API Endpoints
+### Frontend Setup
 
-### 1. Seed Question Bank
-**POST** `/seed`
+1. **Install Node packages**:
+```bash
+cd frontend
+npm install
+```
 
-Seeds the database with sample questions for Grade 3 and Grade 5.
+2. **Run the frontend**:
+```bash
+npm run dev
+```
 
-**Example:**
+Open `http://localhost:5173` in your browser.
+
+### First Time Setup
+
+1. **Seed the question bank**: Click "Seed Question Bank" on the home page, or:
 ```bash
 curl -X POST http://localhost:8000/seed
 ```
 
-**Response:**
-```json
-{
-  "message": "Successfully seeded 20 questions",
-  "questions_created": 20,
-  "grade_levels": [3, 5],
-  "topics_per_grade": 5
-}
+2. **Start taking quizzes**: Enter a student ID, pick a grade level, and click "Start Quiz"
+
+## How It Works
+
+### Taking a Quiz
+
+1. You get 10 questions covering different topics
+2. Answer them all and submit
+3. See your score and which topics you need to work on
+
+### Adaptive Practice
+
+- If you score below 80% on a topic, it's marked as "weak"
+- When you retake a quiz, 70% of questions come from your weak topics
+- The other 30% are from topics you're doing well on (for review)
+
+### Mastery
+
+- You've "mastered" a grade level when you pass 2 quizzes in a row with no weak topics
+- Keep practicing until you get there!
+
+## API Endpoints
+
+### Seed Question Bank
+**POST** `/seed`
+
+Populates the database with questions. Do this once before using the app.
+
+```bash
+curl -X POST http://localhost:8000/seed
 ```
 
-### 2. Generate Quiz
+### Generate Quiz
 **POST** `/quiz/generate`
 
-Generates a new quiz for a student. Uses adaptive logic if the student has previous attempts.
+Creates a new quiz. If you've taken quizzes before, it automatically focuses on your weak topics.
 
-**Request Body:**
+**Request:**
 ```json
 {
   "student_id": "student123",
@@ -114,520 +136,166 @@ Generates a new quiz for a student. Uses adaptive logic if the student has previ
 }
 ```
 
-**Example:**
-```bash
-curl -X POST http://localhost:8000/quiz/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "student_id": "student123",
-    "grade_level": 3,
-    "topics": ["Addition", "Subtraction", "Multiplication", "Division", "Fractions"],
-    "num_questions": 10
-  }'
-```
-
-**Response:**
-```json
-{
-  "quiz_id": 1,
-  "student_id": "student123",
-  "grade_level": 3,
-  "questions": [
-    {
-      "id": 1,
-      "grade_level": 3,
-      "topic": "Addition",
-      "difficulty": 1,
-      "weight": 1.0,
-      "prompt": "What is 5 + 3?",
-      "choices": ["6", "7", "8", "9"],
-      "explanation": null
-    },
-    ...
-  ],
-  "created_at": "2024-01-15T10:30:00"
-}
-```
-
-### 3. Submit Quiz
+### Submit Quiz
 **POST** `/quiz/{quiz_id}/submit`
 
-Submits answers for a quiz and receives scoring results.
+Submit your answers and get results.
 
-**Request Body:**
+**Request:**
 ```json
 {
   "answers": {
     "1": "8",
     "2": "27",
-    "3": "6",
-    ...
+    "3": "6"
   }
 }
 ```
 
-**Example:**
-```bash
-curl -X POST http://localhost:8000/quiz/1/submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "answers": {
-      "1": "8",
-      "2": "27",
-      "3": "6",
-      "4": "12",
-      "5": "12",
-      "6": "42",
-      "7": "4",
-      "8": "7",
-      "9": "1/2",
-      "10": "1/2"
-    }
-  }'
-```
+**Response includes:**
+- Overall score
+- Score per topic
+- List of weak topics
+- Mastery status
+- Recommendation for next quiz
 
-**Response:**
-```json
-{
-  "attempt_id": 1,
-  "quiz_id": 1,
-  "score_total": 0.85,
-  "topic_metrics": {
-    "Addition": {
-      "correct": 2,
-      "total": 2,
-      "weighted_score": 1.0
-    },
-    "Subtraction": {
-      "correct": 1,
-      "total": 2,
-      "weighted_score": 0.6
-    },
-    ...
-  },
-  "weak_topics": ["Subtraction", "Division"],
-  "passed": false,
-  "mastery_status": {
-    "mastered": false,
-    "consecutive_passes": 0,
-    "required": 2
-  },
-  "next_quiz_recommendation": {
-    "student_id": "student123",
-    "grade_level": 3,
-    "topics": ["Addition", "Subtraction", "Multiplication", "Division", "Fractions"],
-    "num_questions": 10,
-    "focus": "weak_topics",
-    "weak_topics": ["Subtraction", "Division"]
-  }
-}
-```
-
-### 4. Get Student History
+### Get Student History
 **GET** `/student/{student_id}/history`
 
-Retrieves complete quiz and attempt history for a student.
+See all your past quizzes and attempts.
 
-**Example:**
-```bash
-curl http://localhost:8000/student/student123/history
-```
-
-**Response:**
-```json
-{
-  "student_id": "student123",
-  "summary": {
-    "total_quizzes": 3,
-    "total_attempts": 3,
-    "average_score": 0.7833,
-    "all_weak_topics": ["Subtraction", "Division"],
-    "mastery_status": {
-      "mastered": false,
-      "consecutive_passes": 0,
-      "required": 2
-    }
-  },
-  "history": [
-    {
-      "quiz": {
-        "id": 1,
-        "student_id": "student123",
-        "grade_level": 3,
-        "created_at": "2024-01-15T10:30:00",
-        "question_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-      },
-      "attempts": [
-        {
-          "id": 1,
-          "quiz_id": 1,
-          "student_id": "student123",
-          "submitted_at": "2024-01-15T10:35:00",
-          "answers": {"1": "8", "2": "27", ...},
-          "score_total": 0.85,
-          "topic_metrics": {...},
-          "weak_topics": ["Subtraction", "Division"],
-          "passed": false
-        }
-      ]
-    },
-    ...
-  ]
-}
-```
-
-### 5. Get Feedback (Feedback Coach)
+### Get AI Feedback (Optional)
 **POST** `/attempt/{attempt_id}/feedback`
 
-Generates personalized feedback using an LLM. Provides study recommendations and practice questions for weak topics.
+Get personalized study tips and practice questions. Requires LLM setup (see below).
 
-**Note**: This endpoint requires an LLM provider to be configured (see [Feedback Coach Setup](#feedback-coach-setup) below).
+## AI Feedback Setup (Optional)
 
-**Example:**
-```bash
-curl -X POST http://localhost:8000/attempt/1/feedback
-```
+The AI feedback feature is completely optional. Everything else works fine without it.
 
-**Response:**
-```json
-{
-  "summary": "You did well on Addition and Multiplication! Focus on improving Subtraction and Division. Keep practicing and you'll master these topics soon.",
-  "topics": {
-    "Subtraction": {
-      "actions": [
-        "Practice subtracting two-digit numbers using number lines",
-        "Review borrowing/regrouping techniques with visual examples",
-        "Complete 10 subtraction problems daily focusing on accuracy"
-      ],
-      "practice": [
-        {
-          "q": "What is 45 - 18?",
-          "answer": "27",
-          "explanation": "Start with 45, subtract 8 to get 37, then subtract 10 more to get 27. You can also think: 45 - 18 = (45 - 10) - 8 = 35 - 8 = 27."
-        },
-        {
-          "q": "Sarah has 32 stickers. She gives away 15. How many does she have left?",
-          "answer": "17",
-          "explanation": "Subtract 15 from 32: 32 - 15 = 17. You can check by adding: 17 + 15 = 32."
-        }
-      ]
-    },
-    "Division": {
-      "actions": [
-        "Practice division facts using flashcards",
-        "Use visual aids like arrays to understand division concepts",
-        "Solve word problems involving division to build real-world connections"
-      ],
-      "practice": [
-        {
-          "q": "If you have 24 cookies and want to share them equally among 6 friends, how many cookies does each friend get?",
-          "answer": "4",
-          "explanation": "Divide 24 by 6: 24 ÷ 6 = 4. Each friend gets 4 cookies. You can verify: 4 × 6 = 24."
-        },
-        {
-          "q": "What is 35 ÷ 5?",
-          "answer": "7",
-          "explanation": "35 divided by 5 equals 7. Think: how many times does 5 go into 35? 5 × 7 = 35, so the answer is 7."
-        }
-      ]
-    }
-  }
-}
-```
+### Using Ollama (Free, Recommended)
 
-**Important**: The LLM does NOT grade answers. Grading remains deterministic and is handled by the scoring system.
+Ollama runs AI models on your computer - no API keys, no costs, completely free.
 
-## Feedback Coach Setup
+1. **Download Ollama**: Get it from [ollama.ai](https://ollama.ai)
 
-The Feedback Coach feature is optional and requires an LLM provider. Configure it using environment variables:
-
-### Option 1: Ollama (Local - FREE & Recommended for POC) ⭐
-
-**✅ 100% FREE - No API costs, runs entirely on your local machine**
-
-This is the best option if you have no funding. Ollama runs models locally on your computer with zero API costs.
-
-1. **Install Ollama**: Download from [ollama.ai](https://ollama.ai) (Windows/Mac/Linux)
-
-2. **Start Ollama** (it runs as a local service):
+2. **Start Ollama**: On Windows, it starts automatically after install. On Mac/Linux, run:
    ```bash
-   # On Windows, just run the installer - it starts automatically
-   # On Mac/Linux, run: ollama serve
+   ollama serve
    ```
 
-3. **Pull a free model** (downloads to your computer):
+3. **Download a model** (this downloads to your computer):
    ```bash
-   ollama pull llama2
-   # or for smaller/faster: ollama pull mistral
-   # or for even smaller: ollama pull phi
+   ollama pull phi
+   # or for better quality (but slower): ollama pull llama2
    ```
 
 4. **Set environment variables** (Windows PowerShell):
    ```powershell
    $env:LLM_PROVIDER="ollama"
-   $env:OLLAMA_MODEL="llama2"  # Optional, defaults to "llama2"
+   $env:OLLAMA_MODEL="phi"
    ```
    
-   Or on Mac/Linux:
+   On Mac/Linux:
    ```bash
    export LLM_PROVIDER=ollama
-   export OLLAMA_MODEL=llama2
+   export OLLAMA_MODEL=phi
    ```
 
-**That's it!** No API keys, no costs, everything runs locally. The model runs on your computer's CPU/GPU.
+5. **Restart your backend** - that's it!
 
-### Option 2: OpenAI (💰 Paid - Not Recommended for POC)
+The model runs on your computer, so you need enough RAM (4-8GB recommended for smaller models like `phi`).
 
-**⚠️ COSTS MONEY** - Pay-per-use API (typically $0.001-0.01 per request)
+### Using OpenAI (Costs Money)
 
-1. **Get API key** from [platform.openai.com](https://platform.openai.com)
+If you want to use OpenAI instead:
 
-2. **Set environment variables**:
+1. Get an API key from [platform.openai.com](https://platform.openai.com)
+2. Set environment variables:
    ```bash
    export LLM_PROVIDER=openai
-   export OPENAI_API_KEY=your-api-key-here
-   export OPENAI_MODEL=gpt-3.5-turbo  # Optional, defaults to "gpt-3.5-turbo"
+   export OPENAI_API_KEY=your-key-here
    ```
 
-### Option 3: HuggingFace (🆓 Limited Free Tier)
+**Note**: OpenAI charges per request, so this will cost money. Ollama is free.
 
-**⚠️ Free tier has rate limits** - May hit limits with heavy usage
+### Using HuggingFace (Free but Limited)
 
-1. **Get free API key** from [huggingface.co](https://huggingface.co) (free account)
-
-2. **Set environment variables**:
+1. Get a free API key from [huggingface.co](https://huggingface.co)
+2. Set environment variables:
    ```bash
    export LLM_PROVIDER=huggingface
-   export HUGGINGFACE_API_KEY=your-api-key-here
-   export HUGGINGFACE_MODEL=mistralai/Mistral-7B-Instruct-v0.1  # Optional
+   export HUGGINGFACE_API_KEY=your-key-here
    ```
 
----
+**Note**: Free tier has rate limits, so you might hit limits with heavy use.
 
-**💡 Recommendation for POC with no funding**: Use **Ollama** (Option 1). It's completely free, runs locally, and has no usage limits. The only requirement is having enough RAM (4-8GB recommended for smaller models like `phi` or `mistral`).
+## Text-to-Speech (Optional)
 
-**Note**: If no LLM provider is configured, the feedback endpoint will return a 503 error. The rest of the API works perfectly without it - you can use all quiz features without any LLM setup.
+The TTS feature lets you listen to questions and feedback. It's completely optional - the app works fine without it.
 
-## Text-to-Speech (TTS) Setup
+### Browser TTS (Recommended - Already Works!)
 
-The TTS feature is **completely optional** and allows you to convert quiz questions and feedback to audio. The core quiz functionality works perfectly without TTS.
+The frontend uses your browser's built-in text-to-speech. Just click the 🔊 button next to questions - no setup needed!
 
-### Option 1: Piper TTS (🆓 FREE - Recommended) ⭐
+### Backend TTS (Optional)
 
-**✅ 100% FREE - Lightweight, fast, runs locally**
+If you want backend TTS (for API use), you can install Piper TTS:
 
-Piper is the recommended TTS option - it's lightweight, fast, and completely free.
-
-1. **Install Piper TTS**:
-   ```bash
-   pip install piper-tts
-   ```
-
-2. **That's it!** Piper will automatically download voices on first use.
-
-3. **Optional - Set environment variables**:
-   ```bash
-   export TTS_PROVIDER=piper
-   export PIPER_VOICE=en_US-lessac-medium  # Optional, defaults to this
-   ```
-
-**Available voices** (Piper will download automatically):
-- `en_US-lessac-medium` (default) - US English, medium quality
-- `en_US-lessac-low` - US English, faster/lower quality
-- `en_GB-alba-medium` - UK English
-- Many more available - see [Piper voices](https://github.com/rhasspy/piper/blob/master/voices.md)
-
-### Option 2: Coqui TTS (🆓 FREE - Alternative)
-
-**✅ FREE but larger download** - Alternative option if Piper doesn't work
-
-1. **Install Coqui TTS**:
-   ```bash
-   pip install TTS soundfile
-   ```
-
-2. **Set environment variables**:
-   ```bash
-   export TTS_PROVIDER=coqui
-   export COQUI_MODEL=tts_models/en/ljspeech/tacotron2-DDC  # Optional
-   ```
-
-**Note**: Coqui TTS downloads models on first use (can be several GB).
-
----
-
-**💡 Recommendation**: Use **Piper TTS** (Option 1). It's lighter, faster, and easier to set up.
-
-**Note**: If no TTS provider is installed, the `/tts` endpoint will return a 503 error. All other quiz features work perfectly without TTS.
-
-## TTS API Endpoint
-
-### POST /tts
-
-Convert text to speech audio.
-
-**Request Body:**
-```json
-{
-  "text": "What is 5 + 3?",
-  "voice": "default"
-}
-```
-
-**Example:**
 ```bash
-curl -X POST http://localhost:8000/tts \
-  -H "Content-Type: application/json" \
-  -d '{"text": "What is 5 + 3?", "voice": "default"}' \
-  --output speech.wav
+pip install piper-tts
 ```
 
-**Response:**
-- Returns WAV audio file as binary response
-- Content-Type: `audio/wav`
-- Maximum text length: 5000 characters
+That's it - Piper will download voices automatically when you first use it.
 
-**Status Check:**
-```bash
-curl http://localhost:8000/tts/status
-```
+## How Scoring Works
 
-Returns:
-```json
-{
-  "available": true,
-  "provider": "Piper",
-  "message": "TTS is ready"
-}
-```
-
-**Usage Example - Convert Quiz Question to Speech:**
-```bash
-# Get a quiz question
-QUIZ_RESPONSE=$(curl -X POST http://localhost:8000/quiz/generate \
-  -H "Content-Type: application/json" \
-  -d '{"student_id": "alice", "grade_level": 3, "topics": ["Addition"], "num_questions": 1}')
-
-# Extract question text (example)
-QUESTION_TEXT="What is 5 + 3?"
-
-# Convert to speech
-curl -X POST http://localhost:8000/tts \
-  -H "Content-Type: application/json" \
-  -d "{\"text\": \"$QUESTION_TEXT\", \"voice\": \"default\"}" \
-  --output question.wav
-
-# Play the audio file
-# On Windows: start question.wav
-# On Mac: afplay question.wav
-# On Linux: aplay question.wav
-```
-
-## Scoring Logic
-
-- **Question Grading**: 1 if answer matches (case-insensitive, whitespace-normalized), 0 otherwise
-- **Topic Weighted Score**: `sum(weight × correct) / sum(weight)` for all questions in that topic
-- **Overall Score**: `sum(weight × correct) / sum(weight)` for all questions
-- **Weak Topics**: Topics with weighted_score < 0.80 (mastery threshold)
+- **Grading**: Answers are compared (case-insensitive, whitespace ignored)
+- **Topic Score**: Weighted average of all questions in that topic
+- **Overall Score**: Weighted average of all questions
+- **Weak Topics**: Any topic with score < 80%
 
 ## Adaptive Rules
 
-1. **Weak Topic Identification**: Topics with weighted_score < 0.80 are considered weak
-2. **Next Quiz Generation**:
-   - 70% of questions from weak topics
-   - 30% from remaining topics (review)
-   - Avoids repeating questions from the last 2 quizzes
-3. **Mastery**: Student is considered "mastered" when they have 2 consecutive attempts with no weak topics
+1. **Weak topics**: Topics where you scored < 80%
+2. **Next quiz**: 70% questions from weak topics, 30% from other topics
+3. **Mastery**: Pass 2 quizzes in a row with no weak topics
 
-## Running Tests
+## Database
 
+Uses SQLite - the database file `grademaster.db` is created automatically in the project root. No setup needed.
+
+## Testing
+
+Run tests with:
 ```bash
 pytest tests/
 ```
 
-## Database
+## API Docs
 
-The application uses SQLite with the database file `grademaster.db` created in the project root. The database is automatically initialized on first startup.
-
-## Sample Workflow
-
-1. **Seed the question bank**:
-   ```bash
-   curl -X POST http://localhost:8000/seed
-   ```
-
-2. **Generate initial diagnostic quiz**:
-   ```bash
-   curl -X POST http://localhost:8000/quiz/generate \
-     -H "Content-Type: application/json" \
-     -d '{"student_id": "alice", "grade_level": 3, "topics": ["Addition", "Subtraction", "Multiplication", "Division", "Fractions"], "num_questions": 10}'
-   ```
-
-3. **Submit quiz answers**:
-   ```bash
-   curl -X POST http://localhost:8000/quiz/1/submit \
-     -H "Content-Type: application/json" \
-     -d '{"answers": {"1": "8", "2": "27", ...}}'
-   ```
-
-4. **Generate next adaptive quiz** (using recommendation from step 3):
-   ```bash
-   curl -X POST http://localhost:8000/quiz/generate \
-     -H "Content-Type: application/json" \
-     -d '{"student_id": "alice", "grade_level": 3, "topics": ["Addition", "Subtraction", "Multiplication", "Division", "Fractions"], "num_questions": 10}'
-   ```
-
-5. **Check student history**:
-   ```bash
-   curl http://localhost:8000/student/alice/history
-   ```
-
-6. **Get personalized feedback** (requires LLM provider):
-   ```bash
-   curl -X POST http://localhost:8000/attempt/1/feedback
-   ```
-
-## Web UI
-
-A minimal React + Vite web interface is available in the `frontend/` directory. See [frontend/README.md](frontend/README.md) for setup instructions.
-
-**Quick Start**:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Then open `http://localhost:5173` in your browser.
-
-The UI provides:
-- Start Quiz page to begin a new quiz
-- Interactive quiz taking interface
-- Results page with topic metrics and weak topics
-- One-click next quiz generation
-
-## Web UI
-
-A minimal React + Vite web interface is available in the `frontend/` directory. See [frontend/README.md](frontend/README.md) for detailed setup instructions.
-
-**Quick Start**:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Then open `http://localhost:5173` in your browser.
-
-The UI provides:
-- **Start Quiz** page to begin a new quiz
-- **Interactive quiz taking** interface with multiple choice and text input
-- **Results page** with topic metrics, weak topics, and mastery status
-- **One-click next quiz generation** for adaptive remediation
-
-## API Documentation
-
-Interactive API documentation is available at:
+Once the backend is running, check out:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
+## Troubleshooting
+
+**Backend won't start?**
+- Make sure you're in the virtual environment
+- Check that port 8000 isn't already in use
+
+**Frontend won't start?**
+- Make sure you ran `npm install` in the frontend directory
+- Check that port 5173 isn't already in use
+
+**AI feedback not working?**
+- Make sure Ollama is running (`ollama list` should work)
+- Check that you set the environment variables
+- Restart the backend after setting environment variables
+
+**Questions not showing up?**
+- Make sure you seeded the database (click "Seed Question Bank" or use the `/seed` endpoint)
+
+## License
+
+This is a proof-of-concept project. Use it however you want!

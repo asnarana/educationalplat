@@ -1,6 +1,6 @@
 """
 LLM provider abstraction for pluggable model support.
-Supports Ollama (local via Langchain), OpenAI, and HuggingFace.
+Supports Ollama (local via LangChain ChatOllama), OpenAI, and HuggingFace.
 """
 import os
 import json
@@ -18,40 +18,55 @@ class LLMProvider(ABC):
 
 
 class OllamaProvider(LLMProvider):
-    """Ollama provider for local LLM inference using Langchain."""
+    """Ollama provider for local LLM inference using LangChain ChatOllama."""
     
     def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434"):
         """
-        Initialize Ollama provider with Langchain.
+        Initialize Ollama provider using LangChain ChatOllama.
         
         Args:
-            model: Model name (e.g., "llama2", "mistral", "phi", "llama3", "codellama")
+            model: Model name (e.g., "phi", "llama2", "mistral", "llama3.2:1b", "llama3.1")
             base_url: Ollama API base URL
         """
         try:
-            from langchain_ollama import OllamaLLM
-            self.llm = OllamaLLM(
+            from langchain_ollama import ChatOllama
+            self.llm = ChatOllama(
                 model=model,
                 base_url=base_url,
                 temperature=0.7,
-                top_p=0.9,
             )
         except ImportError:
             raise ImportError(
-                "langchain-ollama library required for Ollama. "
-                "Install with: pip install langchain langchain-ollama"
+                "langchain-ollama library required. Install with: pip install langchain-ollama"
             )
         
         self.model = model
         self.base_url = base_url
     
     def generate(self, prompt: str) -> str:
-        """Generate response using Langchain Ollama integration."""
+        """
+        Generate response using LangChain ChatOllama invoke method.
+        
+        Follows the official LangChain ChatOllama documentation:
+        https://python.langchain.com/docs/integrations/chat/ollama
+        
+        Uses SystemMessage and HumanMessage with invoke() method as shown in docs.
+        """
         try:
-            response = self.llm.invoke(prompt)
-            return response.strip() if response else ""
+            from langchain.messages import HumanMessage, SystemMessage
+            
+            # Use LangChain's message format with system prompt (as per LangChain docs)
+            messages = [
+                SystemMessage(content="You are a helpful educational assistant. Return only valid JSON when asked for structured data."),
+                HumanMessage(content=prompt)
+            ]
+            
+            # Use invoke method as shown in LangChain ChatOllama documentation
+            # Docs: https://python.langchain.com/docs/integrations/chat/ollama
+            response = self.llm.invoke(messages)
+            return response.content.strip() if response.content else ""
         except Exception as e:
-            raise RuntimeError(f"Ollama (Langchain) error: {str(e)}")
+            raise RuntimeError(f"Ollama (LangChain ChatOllama) error: {str(e)}")
 
 
 class OpenAIProvider(LLMProvider):
