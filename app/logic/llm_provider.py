@@ -45,26 +45,78 @@ class OllamaProvider(LLMProvider):
     
     def generate(self, prompt: str) -> str:
         """
-        Generate response using LangChain ChatOllama invoke method.
-        
-        Follows the official LangChain ChatOllama documentation:
-        https://python.langchain.com/docs/integrations/chat/ollama
-        
-        Uses SystemMessage and HumanMessage with invoke() method as shown in docs.
+        Generate response using LangChain ChatOllama.
+        Compatible with both old and new LangChain versions.
         """
         try:
-            from langchain.messages import HumanMessage, SystemMessage
-            
-            # Use LangChain's message format with system prompt (as per LangChain docs)
-            messages = [
-                SystemMessage(content="You are a helpful educational assistant. Return only valid JSON when asked for structured data."),
-                HumanMessage(content=prompt)
-            ]
-            
-            # Use invoke method as shown in LangChain ChatOllama documentation
-            # Docs: https://python.langchain.com/docs/integrations/chat/ollama
-            response = self.llm.invoke(messages)
-            return response.content.strip() if response.content else ""
+            # Try new LangChain (>= 1.0) - langchain.messages
+            try:
+                from langchain.messages import HumanMessage, SystemMessage
+                messages = [
+                    SystemMessage(content="You are a helpful educational assistant. Return only valid JSON when asked for structured data."),
+                    HumanMessage(content=prompt)
+                ]
+                response = self.llm.invoke(messages)
+                return response.content.strip() if response.content else ""
+            except ImportError:
+                # Try old LangChain (< 1.0) - langchain.schema.messages
+                try:
+                    from langchain.schema.messages import HumanMessage, SystemMessage
+                    messages = [
+                        SystemMessage(content="You are a helpful educational assistant. Return only valid JSON when asked for structured data."),
+                        HumanMessage(content=prompt)
+                    ]
+                    # Try invoke first (newer API)
+                    if hasattr(self.llm, 'invoke'):
+                        response = self.llm.invoke(messages)
+                    elif hasattr(self.llm, 'predict_messages'):
+                        response = self.llm.predict_messages(messages)
+                    elif hasattr(self.llm, '__call__'):
+                        response = self.llm(messages)
+                    else:
+                        # Fallback: use string prompt
+                        system_prompt = "You are a helpful educational assistant. Return only valid JSON when asked for structured data.\n\n"
+                        full_prompt = system_prompt + prompt
+                        response = self.llm.predict(full_prompt) if hasattr(self.llm, 'predict') else self.llm(full_prompt)
+                    
+                    if hasattr(response, 'content'):
+                        return response.content.strip() if response.content else ""
+                    elif isinstance(response, str):
+                        return response.strip()
+                    else:
+                        return str(response).strip()
+                except ImportError:
+                    # Last fallback: langchain.schema (very old versions)
+                    try:
+                        from langchain.schema import HumanMessage, SystemMessage
+                        messages = [
+                            SystemMessage(content="You are a helpful educational assistant. Return only valid JSON when asked for structured data."),
+                            HumanMessage(content=prompt)
+                        ]
+                        if hasattr(self.llm, 'invoke'):
+                            response = self.llm.invoke(messages)
+                        elif hasattr(self.llm, 'predict_messages'):
+                            response = self.llm.predict_messages(messages)
+                        else:
+                            response = self.llm(messages)
+                        
+                        if hasattr(response, 'content'):
+                            return response.content.strip() if response.content else ""
+                        elif isinstance(response, str):
+                            return response.strip()
+                        else:
+                            return str(response).strip()
+                    except ImportError:
+                        # Absolute last resort: plain string prompt
+                        system_prompt = "You are a helpful educational assistant. Return only valid JSON when asked for structured data.\n\n"
+                        full_prompt = system_prompt + prompt
+                        if hasattr(self.llm, 'predict'):
+                            response = self.llm.predict(full_prompt)
+                        elif hasattr(self.llm, '__call__'):
+                            response = self.llm(full_prompt)
+                        else:
+                            raise RuntimeError("Unable to call LangChain ChatOllama with any known method")
+                        return str(response).strip() if response else ""
         except Exception as e:
             raise RuntimeError(f"Ollama (LangChain ChatOllama) error: {str(e)}")
 

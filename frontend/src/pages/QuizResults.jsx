@@ -256,9 +256,10 @@ function QuizResults() {
   const weakTopics = results.weak_topics || [];
   const isPracticeQuiz = results.is_practice_quiz || false;
   const practiceTopic = results.practice_topic || null;
+  // Use weighted_score (consistent with backend) instead of simple percentage
   const topicScore = practiceTopic && results.topic_metrics?.[practiceTopic] 
-    ? (results.topic_metrics[practiceTopic].total > 0 
-        ? ((results.topic_metrics[practiceTopic].correct / results.topic_metrics[practiceTopic].total) * 100).toFixed(1)
+    ? (results.topic_metrics[practiceTopic].weighted_score 
+        ? (results.topic_metrics[practiceTopic].weighted_score * 100).toFixed(1)
         : '0.0')
     : null;
   const isTopicMastered = topicScore && parseFloat(topicScore) >= 100;
@@ -291,10 +292,13 @@ function QuizResults() {
         <h3 style={{ marginBottom: '15px' }}>Topic Performance</h3>
         <div className="metrics-grid">
           {Object.entries(results.topic_metrics || {}).map(([topic, metrics]) => {
-            // Use simple percentage: correct/total * 100 (not weighted score)
-            const score = metrics.total > 0 ? ((metrics.correct / metrics.total) * 100).toFixed(1) : '0.0';
+            // Use weighted_score (consistent with backend logic for determining weak topics)
+            const score = metrics.weighted_score 
+              ? (metrics.weighted_score * 100).toFixed(1) 
+              : (metrics.total > 0 ? ((metrics.correct / metrics.total) * 100).toFixed(1) : '0.0');
             const isWeak = weakTopics.includes(topic);
-            const isStrong = (metrics.correct / metrics.total) >= 0.80;
+            // Check if strong using weighted_score (consistent with weak topic logic)
+            const isStrong = metrics.weighted_score ? metrics.weighted_score >= 0.80 : (metrics.correct / metrics.total) >= 0.80;
             
             return (
               <div

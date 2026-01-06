@@ -302,8 +302,12 @@ def submit_quiz(
     weak_topics = identify_weak_topics(topic_metrics, mastery_threshold=0.80)
     passed = len(weak_topics) == 0
     
+    # Determine quiz type: if quiz has questions from only one topic, it's practice
+    unique_topics = set(q.topic for q in questions)
+    quiz_type = 'practice' if len(unique_topics) == 1 else 'full'
+    
     # Track metrics
-    track_quiz_submitted(quiz.grade_level, overall_score * 100, passed)
+    track_quiz_submitted(quiz.grade_level, overall_score * 100, passed, quiz_type=quiz_type)
     for topic in weak_topics:
         track_weak_topic(quiz.grade_level, topic)
     

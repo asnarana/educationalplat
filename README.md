@@ -463,7 +463,7 @@ docker-compose up -d
 ```
 
 3. **Access dashboards:**
-- **Grafana**: http://localhost:3000 (admin/admin)
+- **Grafana**: http://localhost:3001 (admin/admin)
 - **Prometheus**: http://localhost:9090
 - **Metrics endpoint**: http://localhost:8000/metrics
 
@@ -490,4 +490,3 @@ The FastAPI app exposes metrics at `/metrics` in Prometheus format. You can view
 curl http://localhost:8000/metrics
 ```
 
-**Note**: Monitoring is completely optional - the app works fine without it!

@@ -185,19 +185,54 @@ function TakeQuiz() {
     <div className="container">
       <div className="card">
         <h2>Quiz Questions</h2>
-        <p style={{ marginBottom: '20px', color: '#666' }}>
-          Answer all questions and click Submit when done.
-        </p>
+        {quiz.questions && (
+          <div style={{ 
+            marginBottom: '20px', 
+            textAlign: 'right'
+          }}>
+            <div style={{
+              display: 'inline-block',
+              backgroundColor: '#007bff',
+              color: 'white',
+              padding: '8px 15px',
+              borderRadius: '6px',
+              fontWeight: 'bold',
+              fontSize: '16px'
+            }}>
+              Total: {quiz.questions.reduce((sum, q) => sum + (q.weight || 1.0), 0).toFixed(1)} points
+            </div>
+          </div>
+        )}
 
         {error && <div className="error">{error}</div>}
 
-        {quiz.questions.map((question, index) => (
+        {quiz.questions.map((question, index) => {
+          // Convert weight to points (weight 1.0 = 1 point, 1.5 = 1.5 points, etc.)
+          const points = question.weight || 1.0;
+          const isHighValue = points > 1.0;
+          
+          return (
           <div key={`${question.id}-${index}`} className="question-card">
             <div className="question-header">
               <span>Question {index + 1} of {quiz.questions.length}</span>
               <span className="question-topic">{question.topic}</span>
+              <span style={{
+                backgroundColor: isHighValue ? '#ffc107' : '#6c757d',
+                color: 'white',
+                padding: '4px 10px',
+                borderRadius: '12px',
+                fontSize: '13px',
+                fontWeight: 'bold'
+              }}>
+                ⭐ {points} {points === 1 ? 'point' : 'points'}
+              </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '10px', 
+              marginBottom: '10px' 
+            }}>
               <div className="question-prompt" style={{ flex: 1 }}>{question.prompt}</div>
               <button
                 onClick={() => handlePlayQuestion(question.prompt, question.id)}
@@ -239,7 +274,8 @@ function TakeQuiz() {
               />
             )}
           </div>
-        ))}
+          );
+        })}
 
         <div className="actions">
           <button

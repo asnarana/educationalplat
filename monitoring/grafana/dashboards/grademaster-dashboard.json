@@ -272,14 +272,24 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(quiz_scores_bucket[5m]))",
-          "legendFormat": "Median - Grade {{grade_level}}",
+          "expr": "histogram_quantile(0.50, rate(quiz_scores_bucket{quiz_type=\"full\"}[5m]))",
+          "legendFormat": "Median - Grade {{grade_level}} (Full)",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(quiz_scores_bucket[5m]))",
-          "legendFormat": "p95 - Grade {{grade_level}}",
+          "expr": "histogram_quantile(0.95, rate(quiz_scores_bucket{quiz_type=\"full\"}[5m]))",
+          "legendFormat": "p95 - Grade {{grade_level}} (Full)",
           "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(quiz_scores_bucket{quiz_type=\"practice\"}[5m]))",
+          "legendFormat": "Median - Grade {{grade_level}} (Practice)",
+          "refId": "C"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(quiz_scores_bucket{quiz_type=\"practice\"}[5m]))",
+          "legendFormat": "p95 - Grade {{grade_level}} (Practice)",
+          "refId": "D"
         }
       ],
       "title": "Quiz Scores Distribution",

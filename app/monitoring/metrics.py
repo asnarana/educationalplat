@@ -35,7 +35,7 @@ quizzes_submitted_total = Counter(
 quiz_scores = Histogram(
     'quiz_scores',
     'Quiz scores distribution',
-    ['grade_level'],
+    ['grade_level', 'quiz_type'],  # quiz_type: 'full' or 'practice'
     buckets=(0, 20, 40, 60, 70, 80, 90, 95, 100)
 )
 
@@ -106,13 +106,13 @@ def track_quiz_generated(grade_level: int, quiz_type: str = 'full'):
     ).inc()
 
 
-def track_quiz_submitted(grade_level: int, score: float, passed: bool):
+def track_quiz_submitted(grade_level: int, score: float, passed: bool, quiz_type: str = 'full'):
     """Track when a quiz is submitted."""
     quizzes_submitted_total.labels(
         grade_level=str(grade_level),
         passed='true' if passed else 'false'
     ).inc()
-    quiz_scores.labels(grade_level=str(grade_level)).observe(score)
+    quiz_scores.labels(grade_level=str(grade_level), quiz_type=quiz_type).observe(score)
 
 
 def track_weak_topic(grade_level: int, topic: str):
