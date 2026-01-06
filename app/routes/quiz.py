@@ -147,7 +147,7 @@ def generate_topic_practice_quiz(
     db: Session = Depends(get_db)
 ):
     """
-    Generate a focused practice quiz for a specific topic (5-7 questions).
+    Generate a focused practice quiz for a specific topic.
     
     This is used when a student wants to practice a weak topic specifically.
     """
@@ -268,10 +268,21 @@ def submit_quiz(
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
     
-    # Get questions
-    questions = db.query(Question).filter(Question.id.in_(quiz.question_ids)).all()
-    if len(questions) != len(quiz.question_ids):
+    # Get questions - handle duplicates in question_ids
+    # Deduplicate question_ids to avoid "Some questions not found" error when repeats are allowed
+    unique_question_ids = list(dict.fromkeys(quiz.question_ids))  # Preserves order, removes duplicates
+    
+    questions = db.query(Question).filter(Question.id.in_(unique_question_ids)).all()
+    if len(questions) != len(unique_question_ids):
         raise HTTPException(status_code=500, detail="Some questions not found")
+    
+    # If there were duplicates, we need to expand the questions list to match the original question_ids order
+    # This allows the same question to appear multiple times in the quiz
+    if len(quiz.question_ids) != len(unique_question_ids):
+        # Create a mapping of question ID to Question object
+        question_map = {q.id: q for q in questions}
+        # Rebuild questions list in the order of quiz.question_ids (allowing repeats)
+        questions = [question_map[qid] for qid in quiz.question_ids if qid in question_map]
     
     # Convert answer keys from string to int (JSON sends string keys)
     answers_int_keys = {int(k): v for k, v in request.answers.items()}

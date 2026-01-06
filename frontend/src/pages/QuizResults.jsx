@@ -92,7 +92,7 @@ function QuizResults() {
         studentId,
         gradeLevel,
         topic,
-        7  // 5-7 questions, using 7 as default
+        7  // Number of practice questions
       );
       
       // Store the original main test attempt_id so we can navigate back
@@ -257,7 +257,9 @@ function QuizResults() {
   const isPracticeQuiz = results.is_practice_quiz || false;
   const practiceTopic = results.practice_topic || null;
   const topicScore = practiceTopic && results.topic_metrics?.[practiceTopic] 
-    ? (results.topic_metrics[practiceTopic].weighted_score * 100).toFixed(1)
+    ? (results.topic_metrics[practiceTopic].total > 0 
+        ? ((results.topic_metrics[practiceTopic].correct / results.topic_metrics[practiceTopic].total) * 100).toFixed(1)
+        : '0.0')
     : null;
   const isTopicMastered = topicScore && parseFloat(topicScore) >= 100;
 
@@ -289,9 +291,10 @@ function QuizResults() {
         <h3 style={{ marginBottom: '15px' }}>Topic Performance</h3>
         <div className="metrics-grid">
           {Object.entries(results.topic_metrics || {}).map(([topic, metrics]) => {
-            const score = (metrics.weighted_score * 100).toFixed(1);
+            // Use simple percentage: correct/total * 100 (not weighted score)
+            const score = metrics.total > 0 ? ((metrics.correct / metrics.total) * 100).toFixed(1) : '0.0';
             const isWeak = weakTopics.includes(topic);
-            const isStrong = metrics.weighted_score >= 0.80;
+            const isStrong = (metrics.correct / metrics.total) >= 0.80;
             
             return (
               <div
@@ -312,7 +315,7 @@ function QuizResults() {
           <div className="weak-topics-list">
             <h3>Topics Needing Improvement</h3>
             <p style={{ marginBottom: '15px', color: '#666' }}>
-              Practice these topics with focused quizzes (7 questions each). Practice until you reach 100%:
+              Practice these topics with focused quizzes. Practice until you reach 100%:
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
               {weakTopics.map((topic) => (
@@ -359,7 +362,7 @@ function QuizResults() {
           </div>
         )}
 
-        {results.next_quiz_recommendation && (
+        {results.next_quiz_recommendation && !isPracticeQuiz && (
           <div style={{ marginTop: '20px', padding: '15px', background: '#fff5f5', borderRadius: '8px' }}>
             <strong>Next Quiz Focus:</strong> {results.next_quiz_recommendation.focus === 'weak_topics' 
               ? `70% questions from weak topics: ${weakTopics.join(', ')}`
