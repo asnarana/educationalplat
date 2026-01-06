@@ -9,6 +9,9 @@ from app.db import get_db
 from app.models import Attempt, Quiz, Question
 from app.logic.feedback import generate_feedback
 from app.logic.llm_provider import get_llm_provider, LLMProvider
+from app.monitoring.metrics import track_llm_request
+import time
+import os
 
 router = APIRouter(prefix="/attempt", tags=["feedback"])
 
@@ -61,10 +64,17 @@ def get_feedback(
                    "Please set LLM_PROVIDER environment variable and required API keys."
         )
     
-    # Generate feedback
+    # Generate feedback with metrics tracking
+    start_time = time.time()
+    provider_name = os.getenv("LLM_PROVIDER", "ollama")
+    
     try:
         feedback = generate_feedback(attempt, quiz, questions, llm_provider=llm_provider)
+        duration = time.time() - start_time
+        track_llm_request(provider_name, duration, success=True)
     except Exception as e:
+        duration = time.time() - start_time
+        track_llm_request(provider_name, duration, success=False)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate feedback: {str(e)}"

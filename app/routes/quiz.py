@@ -10,6 +10,9 @@ from app.db import get_db
 from app.models import Question, Quiz, Attempt
 from app.logic.scoring import compute_topic_metrics, compute_overall_score, identify_weak_topics
 from app.logic.adaptive import select_questions_for_quiz, get_recent_question_ids, check_mastery_status
+from app.monitoring.metrics import (
+    track_quiz_generated, track_quiz_submitted, track_weak_topic
+)
 
 router = APIRouter(prefix="/quiz", tags=["quiz"])
 
@@ -132,6 +135,9 @@ def generate_quiz(
     # Return quiz without correct answers
     questions_data = [q.to_dict(include_answer=False) for q in selected_questions]
     
+    # Track metrics
+    track_quiz_generated(quiz.grade_level, quiz_type='full')
+    
     return QuizResponse(
         quiz_id=quiz.id,
         student_id=quiz.student_id,
@@ -238,6 +244,9 @@ def generate_topic_practice_quiz(
     # Return quiz without correct answers
     questions_data = [q.to_dict(include_answer=False) for q in selected_questions]
     
+    # Track metrics for practice quiz
+    track_quiz_generated(request.grade_level, quiz_type='practice')
+    
     return QuizResponse(
         quiz_id=quiz.id,
         student_id=quiz.student_id,
@@ -292,6 +301,11 @@ def submit_quiz(
     overall_score = compute_overall_score(questions, answers_int_keys)
     weak_topics = identify_weak_topics(topic_metrics, mastery_threshold=0.80)
     passed = len(weak_topics) == 0
+    
+    # Track metrics
+    track_quiz_submitted(quiz.grade_level, overall_score * 100, passed)
+    for topic in weak_topics:
+        track_weak_topic(quiz.grade_level, topic)
     
     # Create attempt record (store with int keys)
     attempt = Attempt(

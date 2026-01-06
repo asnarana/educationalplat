@@ -431,3 +431,63 @@ I tried to use the pip install above but was not working no matter how many time
 ## Database
 
 Uses SQLite - the database file `grademaster.db` is created automatically in the project root. No setup needed.
+
+## Monitoring with Prometheus & Grafana (Optional)
+
+The app includes Prometheus metrics and Grafana dashboards for monitoring performance and educational metrics.
+
+### What Gets Monitored
+
+**API Performance:**
+- HTTP request rates and response times
+- Error rates by endpoint
+- Request duration percentiles
+
+**Educational Metrics:**
+- Quizzes generated (full vs practice)
+- Quiz submissions and pass rates
+- Score distributions by grade level
+- Weak topics tracking
+- LLM feedback request performance
+
+### Quick Setup
+
+1. **Install Prometheus client** (already in requirements.txt):
+```bash
+pip install prometheus-client
+```
+
+2. **Start Prometheus and Grafana**:
+```bash
+docker-compose up -d
+```
+
+3. **Access dashboards:**
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Prometheus**: http://localhost:9090
+- **Metrics endpoint**: http://localhost:8000/metrics
+
+4. **View metrics**: The Grafana dashboard will automatically load showing:
+   - HTTP request rates and latency
+   - Quiz generation and submission rates
+   - Score distributions
+   - Weak topics analysis
+   - LLM performance (if using AI feedback)
+
+### Manual Setup (Without Docker)
+
+If you prefer not to use Docker:
+
+1. **Download Prometheus**: https://prometheus.io/download/
+2. **Download Grafana**: https://grafana.com/grafana/download
+3. **Configure Prometheus** to scrape `http://localhost:8000/metrics`
+4. **Import the dashboard** from `monitoring/grafana/dashboards/grademaster-dashboard.json`
+
+### Metrics Endpoint
+
+The FastAPI app exposes metrics at `/metrics` in Prometheus format. You can view raw metrics:
+```bash
+curl http://localhost:8000/metrics
+```
+
+**Note**: Monitoring is completely optional - the app works fine without it!

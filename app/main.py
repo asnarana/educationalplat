@@ -2,10 +2,12 @@
 GradeMaster - Adaptive Remediation Quiz System
 FastAPI main application entry point.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import init_db
 from app.routes import seed, quiz, history, feedback, tts
+from app.monitoring.middleware import PrometheusMiddleware
+from app.monitoring.metrics import get_metrics, CONTENT_TYPE_LATEST
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -13,6 +15,9 @@ app = FastAPI(
     description="Adaptive remediation quiz system for personalized learning",
     version="1.0.0"
 )
+
+# Prometheus middleware (must be added before CORS)
+app.add_middleware(PrometheusMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -58,4 +63,10 @@ def root():
 def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(content=get_metrics(), media_type=CONTENT_TYPE_LATEST)
 

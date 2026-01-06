@@ -5,6 +5,8 @@ pydantic==2.5.0
 python-multipart==0.0.6
 pytest==7.4.3
 pytest-asyncio==0.21.1
+# Monitoring dependencies (optional)
+prometheus-client>=0.19.0  # For Prometheus metrics
 # LLM dependencies (optional - install based on provider choice)
 # FREE: Ollama (local, no API key required)
 langchain>=0.1.0  # LangChain framework
