@@ -23,7 +23,7 @@ educationalplat/
 │   ├── logic/
 │   │   ├── scoring.py       # How we grade quizzes
 │   │   ├── adaptive.py      # Logic for picking questions based on weak topics
-│   │   ├── llm_provider.py  # AI stuff (Ollama/OpenAI)
+│   │   ├── llm_provider.py  # AI stuff (Ollama via LangChain)
 │   │   ├── feedback.py      # AI feedback generation
 │   │   └── tts_provider.py  # Text-to-speech
 │   └── routes/
@@ -59,9 +59,9 @@ educationalplat/
 - **`scoring.py`**: Grades answers and calculates topic scores
   - `grade_quiz()`: Compares student answers to correct answers
   - `calculate_topic_scores()`: Groups questions by topic and calculates percentages
-- **`llm_provider.py`**: Abstraction layer for AI models (Ollama, OpenAI, HuggingFace)
-  - `OllamaProvider`: Uses LangChain's ChatOllama for local AI
-  - `get_llm_provider()`: Factory function that picks provider based on env vars
+- **`llm_provider.py`**: LLM provider using LangChain ChatOllama for Ollama
+  - `OllamaProvider`: Uses LangChain's ChatOllama for local AI inference
+  - `get_llm_provider()`: Factory function that creates OllamaProvider instance
 - **`feedback.py`**: Generates personalized AI feedback
   - `generate_feedback()`: Creates prompt and calls LLM
   - `parse_llm_response()`: Parses JSON response from AI
@@ -138,7 +138,7 @@ Frontend: TakeQuiz.jsx → submit → QuizResults.jsx → "Retake Practice" unti
 **5. AI Feedback (Optional):**
 ```
 User → QuizResults.jsx → "Get AI Feedback" → client.js → POST /attempt/{id}/feedback
-Backend: feedback.py → feedback.py → llm_provider.py → Ollama/OpenAI
+Backend: feedback.py → feedback.py → llm_provider.py → Ollama (LangChain)
          → generates JSON with tips and practice questions
 Frontend: QuizResults.jsx displays AI feedback
 ```
@@ -373,29 +373,7 @@ Ollama runs AI models on your computer - no API keys, no costs, completely free.
 
 The model runs on your computer, so you need enough RAM (4-8GB recommended for smaller models like `phi`).
 
-### Using OpenAI (Costs Money)
-
-If you want to use OpenAI instead:
-
-1. Get an API key from [platform.openai.com](https://platform.openai.com)
-2. Set environment variables:
-   ```bash
-   export LLM_PROVIDER=openai
-   export OPENAI_API_KEY=your-key-here
-   ```
-
-**Note**: OpenAI charges per request, so this will cost money. Ollama is free.
-
-### Using HuggingFace (Free but Limited)
-
-1. Get a free API key from [huggingface.co](https://huggingface.co)
-2. Set environment variables:
-   ```bash
-   export LLM_PROVIDER=huggingface
-   export HUGGINGFACE_API_KEY=your-key-here
-   ```
-
-**Note**: Free tier has rate limits, so you might hit limits with heavy use.
+**Note**: The app uses Ollama via LangChain ChatOllama. For more information, see the [LangChain Ollama documentation](https://python.langchain.com/docs/integrations/chat/ollama).
 
 ## Text-to-Speech (Optional)
 

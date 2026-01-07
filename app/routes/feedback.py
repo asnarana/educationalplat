@@ -11,7 +11,6 @@ from app.logic.feedback import generate_feedback
 from app.logic.llm_provider import get_llm_provider, LLMProvider
 from app.monitoring.metrics import track_llm_request
 import time
-import os
 
 router = APIRouter(prefix="/attempt", tags=["feedback"])
 
@@ -60,13 +59,13 @@ def get_feedback(
     except Exception as e:
         raise HTTPException(
             status_code=503,
-            detail=f"LLM provider not configured or unavailable: {str(e)}. "
-                   "Please set LLM_PROVIDER environment variable and required API keys."
+            detail=f"Ollama LLM provider not configured or unavailable: {str(e)}. "
+                   "Make sure Ollama is running and langchain-ollama is installed."
         )
     
     # Generate feedback with metrics tracking
     start_time = time.time()
-    provider_name = os.getenv("LLM_PROVIDER", "ollama")
+    provider_name = "ollama"  # Always using Ollama now
     
     try:
         feedback = generate_feedback(attempt, quiz, questions, llm_provider=llm_provider)
