@@ -47,13 +47,14 @@ function StartQuiz() {
         // Clear error immediately before showing confirm
         setError(null);
         const shouldClear = confirm(
-          'Database already has questions. Would you like to clear it and reseed with expanded questions?'
+          'Database already has questions. Would you like to clear questions and reseed?\n\n' +
+          'NOTE: Your student history (quizzes and attempts) will be preserved.'
         );
         if (shouldClear) {
           try {
             await api.clearDatabase();
             await api.seedQuestions();
-            alert('Database cleared and reseeded successfully with all questions!');
+            alert('Questions cleared and reseeded successfully!\n\nStudent history has been preserved.');
             setError(null); // Clear any errors on success
           } catch (clearErr) {
             setError(clearErr.message || 'Failed to clear and reseed database');

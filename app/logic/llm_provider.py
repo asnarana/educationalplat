@@ -19,7 +19,8 @@ class LLMProvider(ABC):
 class OllamaProvider(LLMProvider):
     """Ollama provider for local LLM inference using LangChain ChatOllama."""
     
-    def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434", temperature: float = 0.7):
+    def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434", 
+                 temperature: float = 0.7, num_predict: int = 4096):
         """
         Initialize Ollama provider using LangChain ChatOllama.
         
@@ -29,6 +30,7 @@ class OllamaProvider(LLMProvider):
             model: Model name (e.g., "phi", "llama2", "llama3", "mistral", "llama3.2:1b")
             base_url: Ollama API base URL (default: "http://localhost:11434")
             temperature: Temperature for generation (default: 0.7)
+            num_predict: Maximum number of tokens to generate (default: 4096)
         """
         try:
             from langchain_ollama import ChatOllama
@@ -36,6 +38,7 @@ class OllamaProvider(LLMProvider):
                 model=model,
                 base_url=base_url,
                 temperature=temperature,
+                num_predict=num_predict,  # Allow longer responses
             )
         except ImportError:
             raise ImportError(
@@ -44,6 +47,7 @@ class OllamaProvider(LLMProvider):
         
         self.model = model
         self.base_url = base_url
+        self.num_predict = num_predict
     
     def generate(self, prompt: str) -> str:
         """
@@ -94,6 +98,7 @@ def get_llm_provider() -> LLMProvider:
     - OLLAMA_MODEL: Model name for Ollama (default: "llama2")
     - OLLAMA_BASE_URL: Ollama base URL (default: "http://localhost:11434")
     - OLLAMA_TEMPERATURE: Temperature for generation (default: 0.7)
+    - OLLAMA_NUM_PREDICT: Maximum tokens to generate (default: 4096)
     
     Returns:
         OllamaProvider instance
@@ -101,5 +106,6 @@ def get_llm_provider() -> LLMProvider:
     model = os.getenv("OLLAMA_MODEL", "llama2")
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+    num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "4096"))
     
-    return OllamaProvider(model=model, base_url=base_url, temperature=temperature)
+    return OllamaProvider(model=model, base_url=base_url, temperature=temperature, num_predict=num_predict)

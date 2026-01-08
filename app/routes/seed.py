@@ -266,23 +266,59 @@ def seed_questions(db: Session = Depends(get_db)):
 @router.post("/clear", status_code=200)
 def clear_database(db: Session = Depends(get_db)):
     """
-    Clear all data from the database (questions, quizzes, attempts).
+    Clear only questions from the database, preserving student history (quizzes and attempts).
     
-    WARNING: This will delete all data! Use with caution.
+    This allows reseeding the question bank without losing student progress.
+    Note: Quizzes and attempts that reference deleted questions will still exist,
+    but those questions won't be available for new quizzes.
     """
-    from app.models import Attempt, Quiz, Question
+    from app.models import Question
     
     try:
-        # Delete all attempts
-        db.query(Attempt).delete()
-        # Delete all quizzes
-        db.query(Quiz).delete()
-        # Delete all questions
+        # Only delete questions, preserve student history
+        deleted_count = db.query(Question).count()
         db.query(Question).delete()
         db.commit()
         
         return {
-            "message": "Database cleared successfully",
+            "message": f"Successfully cleared {deleted_count} questions from database",
+            "note": "Student history (quizzes and attempts) has been preserved. You can now seed the question bank again with /seed endpoint."
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error clearing questions: {str(e)}")
+
+
+@router.post("/clear-all", status_code=200)
+def clear_all_database(db: Session = Depends(get_db)):
+    """
+    Clear ALL data from the database (questions, quizzes, attempts).
+    
+    WARNING: This will delete ALL student history! Use with extreme caution.
+    Use /seed/clear instead if you only want to clear questions.
+    """
+    from app.models import Attempt, Quiz, Question
+    
+    try:
+        # Delete all attempts first (due to foreign key constraints)
+        attempts_count = db.query(Attempt).count()
+        db.query(Attempt).delete()
+        # Delete all quizzes
+        quizzes_count = db.query(Quiz).count()
+        db.query(Quiz).delete()
+        # Delete all questions
+        questions_count = db.query(Question).count()
+        db.query(Question).delete()
+        db.commit()
+        
+        return {
+            "message": "Database cleared completely",
+            "deleted": {
+                "attempts": attempts_count,
+                "quizzes": quizzes_count,
+                "questions": questions_count
+            },
+            "warning": "All student history has been deleted!",
             "note": "You can now seed the question bank again with /seed endpoint"
         }
     except Exception as e:

@@ -156,6 +156,8 @@ def parse_llm_response(response: str) -> Dict[str, Any]:
     """
     Parse LLM response and extract JSON.
     
+    Handles incomplete JSON by attempting to fix common truncation issues.
+    
     Args:
         response: Raw LLM response string
         
@@ -176,19 +178,73 @@ def parse_llm_response(response: str) -> Dict[str, Any]:
     
     response = response.strip()
     
+    # Try parsing the response as-is
     try:
         return json.loads(response)
-    except json.JSONDecodeError as e:
-        # If parsing fails, try to find JSON object in the response
-        start_idx = response.find("{")
-        end_idx = response.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            try:
-                return json.loads(response[start_idx:end_idx + 1])
-            except json.JSONDecodeError:
-                pass
+    except json.JSONDecodeError:
+        pass
+    
+    # If parsing fails, try to find JSON object in the response
+    start_idx = response.find("{")
+    if start_idx == -1:
+        raise ValueError(f"No JSON object found in response. Response: {response[:500]}")
+    
+    # Try to find the end of the JSON object
+    end_idx = response.rfind("}")
+    if end_idx != -1 and end_idx > start_idx:
+        try:
+            return json.loads(response[start_idx:end_idx + 1])
+        except json.JSONDecodeError:
+            pass
+    
+    # If still failing, try to fix incomplete JSON by closing brackets/braces
+    # This handles cases where the response was truncated mid-JSON
+    try:
+        fixed_response = _fix_incomplete_json(response[start_idx:])
+        return json.loads(fixed_response)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    
+    # Last resort: show more of the response for debugging
+    raise ValueError(
+        f"Failed to parse LLM response as JSON. "
+        f"The response may be incomplete or truncated.\n\n"
+        f"Response (first 1000 chars):\n{response[:1000]}\n\n"
+        f"If the response appears truncated, try using a model with longer context or reduce the number of topics."
+    )
+
+
+def _fix_incomplete_json(json_str: str) -> str:
+    """
+    Attempt to fix incomplete JSON by closing brackets and braces.
+    
+    Args:
+        json_str: Potentially incomplete JSON string
         
-        raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}\nResponse: {response[:500]}")
+    Returns:
+        Fixed JSON string
+    """
+    # Count open/close brackets and braces
+    open_braces = json_str.count("{")
+    close_braces = json_str.count("}")
+    open_brackets = json_str.count("[")
+    close_brackets = json_str.count("]")
+    
+    # Add missing closing braces
+    missing_braces = open_braces - close_braces
+    if missing_braces > 0:
+        # Check if we're in the middle of a string (don't close if we are)
+        if not json_str.rstrip().endswith('"'):
+            json_str += "}" * missing_braces
+    
+    # Add missing closing brackets
+    missing_brackets = open_brackets - close_brackets
+    if missing_brackets > 0:
+        # Check if we're in the middle of a string
+        if not json_str.rstrip().endswith('"'):
+            json_str += "]" * missing_brackets
+    
+    return json_str
 
 
 def generate_feedback(

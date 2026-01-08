@@ -369,7 +369,7 @@ function QuizResults() {
         {results.next_quiz_recommendation && !isPracticeQuiz && (
           <div style={{ marginTop: '20px', padding: '15px', background: '#fff5f5', borderRadius: '8px' }}>
             <strong>Next Quiz Focus:</strong> {results.next_quiz_recommendation.focus === 'weak_topics' 
-              ? `70% questions from weak topics: ${weakTopics.join(', ')}`
+              ? `Focus on weak topics: ${weakTopics.join(', ')}`
               : 'Review all topics'}
           </div>
         )}
@@ -531,7 +531,7 @@ function QuizResults() {
                   onClick={handleRetakeFullTest}
               disabled={generatingNext}
             >
-                  {generatingNext ? 'Generating...' : 'Retake Full Test (70% Focus on Weak Topics)'}
+                  {generatingNext ? 'Generating...' : 'Retake Full Test'}
             </button>
           )}
           <button className="btn btn-secondary" onClick={() => navigate('/')}>

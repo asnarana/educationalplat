@@ -48,10 +48,35 @@ def get_feedback(
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found for this attempt")
     
-    # Get questions
-    questions = db.query(Question).filter(Question.id.in_(quiz.question_ids)).all()
-    if len(questions) != len(quiz.question_ids):
-        raise HTTPException(status_code=500, detail="Some questions not found")
+    # Get questions - handle duplicates and missing questions
+    # Deduplicate question_ids to avoid issues when repeats are allowed
+    unique_question_ids = list(dict.fromkeys(quiz.question_ids))  # Preserves order, removes duplicates
+    
+    questions = db.query(Question).filter(Question.id.in_(unique_question_ids)).all()
+    
+    # Check if any questions are missing (may happen if questions were deleted after quiz creation)
+    found_question_ids = {q.id for q in questions}
+    missing_ids = [qid for qid in unique_question_ids if qid not in found_question_ids]
+    
+    if missing_ids:
+        # Log warning but continue with available questions
+        print(f"Warning: {len(missing_ids)} questions not found for quiz {quiz.id}: {missing_ids}")
+        # Filter out missing questions from the list
+        questions = [q for q in questions if q.id in found_question_ids]
+    
+    if not questions:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"None of the questions for this quiz could be found. "
+                   f"This may happen if questions were deleted after the quiz was created."
+        )
+    
+    # If there were duplicates in quiz.question_ids, expand the questions list to match original order
+    if len(quiz.question_ids) != len(unique_question_ids):
+        # Create a mapping of question ID to Question object
+        question_map = {q.id: q for q in questions}
+        # Rebuild questions list in the order of quiz.question_ids (allowing repeats)
+        questions = [question_map[qid] for qid in quiz.question_ids if qid in question_map]
     
     # Check if LLM provider is configured
     try:
