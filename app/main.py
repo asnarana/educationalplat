@@ -6,6 +6,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import init_db
 from app.routes import seed, quiz, history, feedback, tts
+from app.redis_client import is_redis_available
 from app.monitoring.middleware import PrometheusMiddleware
 from app.monitoring.metrics import get_metrics, CONTENT_TYPE_LATEST
 
@@ -38,8 +39,14 @@ app.include_router(tts.router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on startup."""
+    """Initialize database and check Redis connection on startup."""
     init_db()
+    
+    # Check Redis availability
+    if is_redis_available():
+        print("✅ Redis is connected and available for caching")
+    else:
+        print("⚠️  Redis is not available - app will run without caching")
 
 
 @app.get("/")
@@ -62,11 +69,16 @@ def root():
 @app.get("/health")
 def health_check():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "redis": "available" if is_redis_available() else "unavailable"
+    }
 
 
 @app.get("/metrics")
 def metrics():
     """Prometheus metrics endpoint."""
     return Response(content=get_metrics(), media_type=CONTENT_TYPE_LATEST)
+
+
 

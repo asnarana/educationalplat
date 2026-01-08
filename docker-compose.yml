@@ -1,6 +1,107 @@
 version: '3.8'
 
 services:
+  # Oracle Database (Docker)
+  oracle-db:
+    image: container-registry.oracle.com/database/free:latest
+    container_name: oracle-db
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PWD=admin
+      - ORACLE_CHARACTERSET=AL32UTF8
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "sqlplus -L -S sys/admin@localhost:1521/FREEPDB1 as sysdba < /dev/null | grep -q 'Connected to:' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      
+      start_period: 120s
+
+  # Redis Cache (Docker)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Oracle Database connection (using Docker service name)
+      - ORACLE_USER=${ORACLE_USER:-system}
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD:-admin}
+      - ORACLE_HOST=${ORACLE_HOST:-oracle-db}
+      - ORACLE_PORT=${ORACLE_PORT:-1521}
+      - ORACLE_SERVICE_NAME=${ORACLE_SERVICE_NAME:-FREEPDB1}
+      # Redis connection (using Docker service name)
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      # Ollama connection (if running Ollama locally on host)
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.7}
+    volumes:
+      # Mount for TTS models
+      - ./en_US-lessac-medium.onnx:/app/en_US-lessac-medium.onnx
+      - ./en_US-lessac-medium.onnx.json:/app/en_US-lessac-medium.onnx.json
+    networks:
+      - app-network
+      - monitoring
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend (React/Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Use relative path so nginx can proxy to backend
+        VITE_API_URL: /api
+    container_name: frontend
+    ports:
+      - "5173:80"
+    networks:
+      - app-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Prometheus (Metrics)
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -12,10 +113,13 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
       - monitoring
     restart: unless-stopped
 
+  # Grafana (Dashboards)
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -36,10 +140,21 @@ services:
       - prometheus
 
 volumes:
+  oracle_data:
+    driver: local
+  redis_data:
+    driver: local
   prometheus_data:
+    driver: local
   grafana_data:
+    driver: local
 
 networks:
+  app-network:
+    driver: bridge
   monitoring:
     driver: bridge
+
+
+
 

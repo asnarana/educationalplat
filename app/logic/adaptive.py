@@ -1,10 +1,14 @@
 """
 Adaptive quiz generation logic.
 Selects questions based on weak topics and avoids recent repeats.
+Uses Redis caching for performance optimization.
 """
 from typing import List, Set, Dict
 from sqlalchemy.orm import Session
 from app.models import Question, Quiz, Attempt
+from app.redis_client import (
+    cache_get, cache_set, cache_delete, CACHE_KEYS, is_redis_available
+)
 
 
 def get_recent_question_ids(
@@ -15,6 +19,7 @@ def get_recent_question_ids(
 ) -> Set[int]:
     """
     Get question IDs from the last N quizzes for a student at a specific grade level.
+    Uses Redis cache for faster retrieval.
     
     Args:
         db: Database session
@@ -25,6 +30,18 @@ def get_recent_question_ids(
     Returns:
         Set of question IDs that should be avoided
     """
+    # Try to get from Redis cache first
+    cache_key = CACHE_KEYS["recent_question_ids"].format(
+        student_id=student_id,
+        grade_level=grade_level
+    )
+    
+    cached_ids = cache_get(cache_key)
+    if cached_ids is not None:
+        # Convert list back to set
+        return set(cached_ids)
+    
+    # Cache miss - query database
     recent_quizzes = (
         db.query(Quiz)
         .filter(
@@ -39,6 +56,9 @@ def get_recent_question_ids(
     recent_question_ids = set()
     for quiz in recent_quizzes:
         recent_question_ids.update(quiz.question_ids)
+    
+    # Cache the result (TTL: 30 minutes)
+    cache_set(cache_key, list(recent_question_ids), ttl=1800)
     
     return recent_question_ids
 

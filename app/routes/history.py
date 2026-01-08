@@ -1,11 +1,13 @@
 """
 Routes for retrieving student history.
+Uses Redis caching for improved performance.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict
 from app.db import get_db
 from app.models import Quiz, Attempt
+from app.redis_client import cache_get, cache_set, CACHE_KEYS
 
 router = APIRouter(prefix="/student", tags=["history"])
 
@@ -17,11 +19,18 @@ def get_student_history(
 ):
     """
     Get complete quiz and attempt history for a student.
+    Uses Redis cache for improved performance.
     
     Returns:
     - List of quizzes with their attempts
     - Overall progress summary
     """
+    # Try cache first
+    cache_key = CACHE_KEYS["student_history"].format(student_id=student_id)
+    cached_history = cache_get(cache_key)
+    if cached_history is not None:
+        return cached_history
+    
     # Get all quizzes for student
     quizzes = (
         db.query(Quiz)
@@ -64,7 +73,7 @@ def get_student_history(
     for grade in grade_levels:
         mastery_by_grade[grade] = check_mastery_status(db, student_id, grade, mastery_threshold=0.80)
     
-    return {
+    result = {
         "student_id": student_id,
         "summary": {
             "total_quizzes": total_quizzes,
@@ -75,4 +84,9 @@ def get_student_history(
         },
         "history": quiz_history
     }
+    
+    # Cache the result (TTL: 15 minutes)
+    cache_set(cache_key, result, ttl=900)
+    
+    return result
 

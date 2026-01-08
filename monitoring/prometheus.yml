@@ -5,8 +5,8 @@ global:
 scrape_configs:
   - job_name: 'grademaster-api'
     static_configs:
-      - targets: ['host.docker.internal:8000']
+      - targets: ['backend:8000']
         labels:
           service: 'grademaster-api'
-          environment: 'development'
+          environment: 'docker'
 

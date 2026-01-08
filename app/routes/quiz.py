@@ -13,6 +13,9 @@ from app.logic.adaptive import select_questions_for_quiz, get_recent_question_id
 from app.monitoring.metrics import (
     track_quiz_generated, track_quiz_submitted, track_weak_topic
 )
+from app.redis_client import (
+    cache_get, cache_set, cache_delete, cache_delete_pattern, CACHE_KEYS, is_redis_available
+)
 
 router = APIRouter(prefix="/quiz", tags=["quiz"])
 
@@ -66,19 +69,31 @@ def generate_quiz(
     If student has previous attempts, uses adaptive logic to focus on weak topics.
     Otherwise, generates a balanced quiz across all topics.
     """
-    # Get student's recent attempts to determine weak topics (same grade level only)
-    recent_attempt = (
-        db.query(Attempt)
-        .join(Quiz, Attempt.quiz_id == Quiz.id)
-        .filter(
-            Attempt.student_id == request.student_id,
-            Quiz.grade_level == request.grade_level
-        )
-        .order_by(Attempt.submitted_at.desc())
-        .first()
+    # Get weak topics - try cache first
+    cache_key = CACHE_KEYS["student_weak_topics"].format(
+        student_id=request.student_id,
+        grade_level=request.grade_level
     )
     
-    weak_topics = recent_attempt.weak_topics if recent_attempt else []
+    weak_topics = cache_get(cache_key)
+    
+    if weak_topics is None:
+        # Cache miss - query database
+        recent_attempt = (
+            db.query(Attempt)
+            .join(Quiz, Attempt.quiz_id == Quiz.id)
+            .filter(
+                Attempt.student_id == request.student_id,
+                Quiz.grade_level == request.grade_level
+            )
+            .order_by(Attempt.submitted_at.desc())
+            .first()
+        )
+        
+        weak_topics = recent_attempt.weak_topics if recent_attempt else []
+        
+        # Cache the result (TTL: 1 hour)
+        cache_set(cache_key, weak_topics, ttl=3600)
     
     # Get recent question IDs to avoid repeats (same grade level only)
     recent_question_ids = get_recent_question_ids(db, request.student_id, request.grade_level, num_quizzes=2)
@@ -324,6 +339,36 @@ def submit_quiz(
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
+    
+    # Invalidate Redis cache for this student (new quiz submission changes weak topics and history)
+    if is_redis_available():
+        # Invalidate weak topics cache
+        weak_topics_key = CACHE_KEYS["student_weak_topics"].format(
+            student_id=quiz.student_id,
+            grade_level=quiz.grade_level
+        )
+        cache_delete(weak_topics_key)
+        
+        # Invalidate recent question IDs cache
+        recent_questions_key = CACHE_KEYS["recent_question_ids"].format(
+            student_id=quiz.student_id,
+            grade_level=quiz.grade_level
+        )
+        cache_delete(recent_questions_key)
+        
+        # Invalidate student history cache (if cached)
+        history_pattern = CACHE_KEYS["student_history"].format(student_id=quiz.student_id)
+        cache_delete_pattern(history_pattern)
+        
+        # Invalidate mastery status cache
+        mastery_key = CACHE_KEYS["mastery_status"].format(
+            student_id=quiz.student_id,
+            grade_level=quiz.grade_level
+        )
+        cache_delete(mastery_key)
+        
+        # Update cache with new weak topics
+        cache_set(weak_topics_key, weak_topics, ttl=3600)
     
     # Check mastery status (for this grade level)
     mastery_status = check_mastery_status(db, quiz.student_id, quiz.grade_level, mastery_threshold=0.80)

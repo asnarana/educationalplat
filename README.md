@@ -19,7 +19,8 @@ educationalplat/
 ├── app/                      # Backend (FastAPI)
 │   ├── main.py              # Main app file
 │   ├── models.py            # Database models
-│   ├── db.py                # Database setup
+│   ├── db.py                # Database setup (Oracle)
+│   ├── redis_client.py      # Redis caching client
 │   ├── logic/
 │   │   ├── scoring.py       # How we grade quizzes
 │   │   ├── adaptive.py      # Logic for picking questions based on weak topics
@@ -49,7 +50,7 @@ educationalplat/
 **Core Files:**
 - **`app/main.py`**: Entry point. Sets up FastAPI app, CORS, includes all route modules
 - **`app/models.py`**: SQLAlchemy database models (Question, Quiz, Attempt, Student)
-- **`app/db.py`**: Database connection setup (SQLite) and session management
+- **`app/db.py`**: Database connection setup (Oracle Database) and session management
 
 **Logic Layer (`app/logic/`):**
 - **`adaptive.py`**: The "brain" - decides which questions to show based on student performance
@@ -171,6 +172,47 @@ Frontend: QuizResults.jsx displays AI feedback
 
 ## Getting Started
 
+### Option 1: Docker (Recommended - Everything in Containers) 🐳
+
+**Run the entire stack with one command!**
+
+1. **Login to Oracle Container Registry** (free account):
+   ```powershell
+   docker login container-registry.oracle.com
+   ```
+
+2. **Pull Oracle Database image** (first time only, ~6GB):
+   ```powershell
+   docker pull container-registry.oracle.com/database/free:latest
+   ```
+
+3. **Start all services**:
+   ```powershell
+   docker-compose up -d
+   ```
+
+4. **Wait for Oracle to initialize** (2-3 minutes):
+   ```powershell
+   docker-compose logs -f oracle-db
+   # Wait until you see: DATABASE IS READY TO USE!
+   ```
+
+5. **Initialize database tables**:
+   ```powershell
+   docker-compose exec backend python -c "from app.db import init_db; init_db()"
+   ```
+
+6. **Access the application**:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
+   - Grafana: http://localhost:3001 (admin/admin)
+   - Prometheus: http://localhost:9090
+
+📖 **See `docker-startup.md` for detailed Docker instructions and troubleshooting.**
+
+### Option 2: Local Development Setup
+
 ### Backend Setup
 
 1. **Create a virtual environment** (keeps dependencies clean):
@@ -186,6 +228,10 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+
+   This will install:
+   - `oracledb` for Oracle Database connectivity
+   - `redis` for caching (optional - app works without Redis)
 
 3. **Run the backend**:
 ```bash
@@ -235,7 +281,14 @@ This deletes all questions, quizzes, and attempts. Then seed again with:
 curl -X POST http://localhost:8000/seed
 ```
 
-**Option 3: Delete the database file** - You can also just delete `grademaster.db` from the project root, and it will be recreated when you seed.
+**Option 3: Clear database** - You can drop and recreate tables (be careful in production):
+   ```sql
+   -- Connect to Oracle and run:
+   DROP TABLE attempts;
+   DROP TABLE quizzes;
+   DROP TABLE questions;
+   ```
+   Then restart the app to recreate tables.
 
 2. **Start taking quizzes**: Enter a student ID, pick a grade level, and click "Start Quiz"
 
@@ -408,7 +461,93 @@ I tried to use the pip install above but was not working no matter how many time
 
 ## Database
 
-Uses SQLite - the database file `grademaster.db` is created automatically in the project root. No setup needed.
+Uses **Oracle Database**. The application connects to Oracle using environment variables for connection details.
+
+### Oracle Database Setup
+
+1. **Install Oracle Database** (if not already installed):
+   - Download from [Oracle Downloads](https://www.oracle.com/database/technologies/oracle-database-software-downloads.html)
+   - Oracle Database Express Edition (XE) is free and suitable for development
+
+2. **Install Oracle Client Libraries** (required for Python driver):
+   - The `oracledb` package handles most cases automatically
+   - For advanced features, you may need Oracle Instant Client: [Oracle Instant Client Downloads](https://www.oracle.com/database/technologies/instant-client/downloads.html)
+
+3. **Set Environment Variables** (before running the app):
+   ```powershell
+   # Windows PowerShell
+   $env:ORACLE_USER="your_username"
+   $env:ORACLE_PASSWORD="your_password"
+   $env:ORACLE_HOST="localhost"
+   $env:ORACLE_PORT="1521"
+   $env:ORACLE_SERVICE_NAME="XE"  # Use "XE" for Express Edition, or your service name
+   ```
+   
+   On Mac/Linux:
+   ```bash
+   export ORACLE_USER="your_username"
+   export ORACLE_PASSWORD="your_password"
+   export ORACLE_HOST="localhost"
+   export ORACLE_PORT="1521"
+   export ORACLE_SERVICE_NAME="XE"
+   ```
+
+4. **Create Tables**: The tables will be created automatically when you start the app (via `init_db()`)
+
+5. **Test Connection**: Start the app and check for any connection errors. The app will attempt to create tables on startup.
+
+**Note**: The connection string format is: `oracle+oracledb://username:password@host:port/?service_name=service_name`
+
+## Redis Caching (Optional)
+
+The application uses Redis for caching to improve performance. Redis is **optional** - the app will work fine without it, but caching provides:
+
+- **Faster quiz generation**: Cached weak topics and recent question IDs
+- **Faster history retrieval**: Cached student history
+- **Reduced database load**: Fewer queries to Oracle
+
+### Redis Setup
+
+1. **Install Redis**:
+   - **Windows**: Download from [Redis for Windows](https://github.com/microsoftarchive/redis/releases) or use WSL
+   - **Mac**: `brew install redis`
+   - **Linux**: `sudo apt install redis-server` or `sudo yum install redis`
+
+2. **Start Redis**:
+   ```powershell
+   # Windows (if installed as service, it starts automatically)
+   # Or run: redis-server.exe
+   
+   # Mac/Linux
+   redis-server
+   ```
+
+3. **Configure Redis** (optional - defaults work):
+   ```powershell
+   $env:REDIS_HOST="localhost"  # Default
+   $env:REDIS_PORT="6379"       # Default
+   $env:REDIS_PASSWORD=""       # Optional, if Redis has password
+   $env:REDIS_DB="0"            # Default database number
+   ```
+
+4. **Verify Redis is working**:
+   - Check health endpoint: `http://localhost:8000/health`
+   - Should show: `"redis": "available"`
+
+### What Gets Cached
+
+- **Student weak topics**: Cached for 1 hour (invalidated when quiz submitted)
+- **Recent question IDs**: Cached for 30 minutes (invalidated when quiz submitted)
+- **Student history**: Cached for 15 minutes
+- **Mastery status**: Cached until quiz submission
+
+### Cache Invalidation
+
+Caches are automatically invalidated when:
+- A quiz is submitted (updates weak topics)
+- New quiz is generated (updates recent questions)
+
+**Note**: If Redis is not available, the app automatically falls back to direct database queries. No functionality is lost.
 
 ## Monitoring with Prometheus & Grafana (Optional)
 

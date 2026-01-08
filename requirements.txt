@@ -2,6 +2,9 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 pydantic==2.5.0
+# Oracle Database driver
+oracledb>=2.0.0  # Oracle database driver (modern, recommended)
+# Alternative: cx_Oracle>=8.3.0  # Legacy Oracle driver (use if oracledb doesn't work)
 python-multipart==0.0.6
 pytest==7.4.3
 pytest-asyncio==0.21.1
@@ -10,6 +13,8 @@ prometheus-client>=0.19.0  # For Prometheus metrics
 # LLM dependencies - Ollama via LangChain (FREE, local, no API key required)
 langchain>=0.1.0  # LangChain framework
 langchain-ollama>=0.1.0  # LangChain Ollama integration (uses ChatOllama with invoke method)
+# Redis caching (optional - app works without it)
+redis>=5.0.0  # Redis client for caching and session storage
 
 # TTS dependencies (optional - install based on provider choice)
 piper-tts>=1.2.0  # For Piper TTS (recommended - lightweight, fast)

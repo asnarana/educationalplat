@@ -1,8 +1,12 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Use relative URL if VITE_API_URL is a relative path, otherwise use full URL
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
 
 class ApiClient {
   async request(endpoint, options = {}) {
-    const url = `${API_BASE_URL}${endpoint}`;
+    // Handle both absolute URLs (http://...) and relative paths (/api)
+    const endpointPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = `${API_BASE_URL}${endpointPath}`;
     const config = {
       headers: {
         'Content-Type': 'application/json',
