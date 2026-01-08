@@ -1,26 +1,50 @@
 """
 Database models for GradeMaster adaptive remediation quiz system.
 """
+import json
 from datetime import datetime
-from typing import Optional, Dict, List
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, ForeignKey, Text
+from typing import Optional, Dict, List, Any
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Sequence, TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
 
 
+# Custom JSON type for Oracle compatibility
+# Oracle doesn't have native JSON type, so we use Text and handle serialization
+class JSONType(TypeDecorator):
+    """JSON type that stores data as Text for Oracle compatibility."""
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect) -> Optional[str]:
+        """Convert Python object to JSON string for storage."""
+        if value is None:
+            return None
+        return json.dumps(value)
+
+    def process_result_value(self, value: Optional[str], dialect) -> Optional[Any]:
+        """Convert JSON string back to Python object."""
+        if value is None:
+            return None
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            return value
+
+
 class Question(Base):
     """Question model representing a quiz question."""
     __tablename__ = "questions"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, Sequence('question_id_seq'), server_default=Sequence('question_id_seq').next_value(), primary_key=True)
     grade_level = Column(Integer, nullable=False, index=True)
     topic = Column(String(100), nullable=False, index=True)
     difficulty = Column(Integer, nullable=False)  # 1-5
     weight = Column(Float, nullable=False)
     prompt = Column(Text, nullable=False)
-    choices = Column(JSON, nullable=True)  # Optional list of choices
+    choices = Column(JSONType, nullable=True)  # Optional list of choices (JSON stored as Text)
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text, nullable=True)
 
@@ -45,11 +69,11 @@ class Quiz(Base):
     """Quiz model representing a generated quiz."""
     __tablename__ = "quizzes"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, Sequence('quiz_id_seq'), server_default=Sequence('quiz_id_seq').next_value(), primary_key=True)
     student_id = Column(String(100), nullable=False, index=True)
     grade_level = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    question_ids = Column(JSON, nullable=False)  # List of question IDs
+    question_ids = Column(JSONType, nullable=False)  # List of question IDs (JSON stored as Text)
 
     attempts = relationship("Attempt", back_populates="quiz", cascade="all, delete-orphan")
 
@@ -68,14 +92,14 @@ class Attempt(Base):
     """Attempt model representing a student's quiz submission."""
     __tablename__ = "attempts"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, Sequence('attempt_id_seq'), server_default=Sequence('attempt_id_seq').next_value(), primary_key=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False, index=True)
     student_id = Column(String(100), nullable=False, index=True)
     submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    answers = Column(JSON, nullable=False)  # Dict: {question_id: answer}
+    answers = Column(JSONType, nullable=False)  # Dict: {question_id: answer} (JSON stored as Text)
     score_total = Column(Float, nullable=False)
-    topic_metrics = Column(JSON, nullable=False)  # Dict: {topic: {correct, total, weighted_score}}
-    weak_topics = Column(JSON, nullable=False)  # List of topics with score < 0.80
+    topic_metrics = Column(JSONType, nullable=False)  # Dict: {topic: {correct, total, weighted_score}} (JSON stored as Text)
+    weak_topics = Column(JSONType, nullable=False)  # List of topics with score < 0.80 (JSON stored as Text)
     passed = Column(Boolean, nullable=False)  # True if all topics mastered
 
     quiz = relationship("Quiz", back_populates="attempts")

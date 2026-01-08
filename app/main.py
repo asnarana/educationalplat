@@ -65,6 +65,58 @@ def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/db/status")
+def db_status():
+    """Check database status and show entry counts."""
+    from sqlalchemy import text, inspect
+    from app.db import engine, SessionLocal
+    from app.models import Question, Quiz, Attempt
+    
+    try:
+        # Test connection
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1 FROM DUAL"))
+        
+        db = SessionLocal()
+        try:
+            # Get table counts
+            question_count = db.query(Question).count()
+            quiz_count = db.query(Quiz).count()
+            attempt_count = db.query(Attempt).count()
+            
+            # Get sequences
+            with engine.connect() as conn:
+                seq_result = conn.execute(text("""
+                    SELECT sequence_name, last_number 
+                    FROM user_sequences 
+                    ORDER BY sequence_name
+                """))
+                sequences = {row[0]: row[1] for row in seq_result.fetchall()}
+            
+            # Get tables
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            
+            return {
+                "status": "connected",
+                "database": "Oracle",
+                "tables": tables,
+                "counts": {
+                    "questions": question_count,
+                    "quizzes": quiz_count,
+                    "attempts": attempt_count
+                },
+                "sequences": sequences
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 @app.get("/metrics")
 def metrics():
     """Prometheus metrics endpoint."""

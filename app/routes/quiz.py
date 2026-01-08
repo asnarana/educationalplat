@@ -66,37 +66,25 @@ def generate_quiz(
     If student has previous attempts, uses adaptive logic to focus on weak topics.
     Otherwise, generates a balanced quiz across all topics.
     """
-    # Get student's recent attempts to determine weak topics (same grade level only)
-    recent_attempt = (
-        db.query(Attempt)
-        .join(Quiz, Attempt.quiz_id == Quiz.id)
-        .filter(
-            Attempt.student_id == request.student_id,
-            Quiz.grade_level == request.grade_level
+    try:
+        # Get student's recent attempts to determine weak topics (same grade level only)
+        recent_attempt = (
+            db.query(Attempt)
+            .join(Quiz, Attempt.quiz_id == Quiz.id)
+            .filter(
+                Attempt.student_id == request.student_id,
+                Quiz.grade_level == request.grade_level
+            )
+            .order_by(Attempt.submitted_at.desc())
+            .first()
         )
-        .order_by(Attempt.submitted_at.desc())
-        .first()
-    )
-    
-    weak_topics = recent_attempt.weak_topics if recent_attempt else []
-    
-    # Get recent question IDs to avoid repeats (same grade level only)
-    recent_question_ids = get_recent_question_ids(db, request.student_id, request.grade_level, num_quizzes=2)
-    
-    # Select questions using adaptive logic
-    selected_questions = select_questions_for_quiz(
-        db=db,
-        grade_level=request.grade_level,
-        topics=request.topics,
-        num_questions=request.num_questions,
-        weak_topics=weak_topics if weak_topics else None,
-        exclude_question_ids=recent_question_ids
-    )
-    
-    # If we don't have enough questions, try with less restrictive exclusions
-    if len(selected_questions) < request.num_questions:
-        # Try excluding only from the last 1 quiz instead of 2
-        recent_question_ids = get_recent_question_ids(db, request.student_id, request.grade_level, num_quizzes=1)
+        
+        weak_topics = recent_attempt.weak_topics if recent_attempt else []
+        
+        # Get recent question IDs to avoid repeats (same grade level only)
+        recent_question_ids = get_recent_question_ids(db, request.student_id, request.grade_level, num_quizzes=2)
+        
+        # Select questions using adaptive logic
         selected_questions = select_questions_for_quiz(
             db=db,
             grade_level=request.grade_level,
@@ -105,46 +93,65 @@ def generate_quiz(
             weak_topics=weak_topics if weak_topics else None,
             exclude_question_ids=recent_question_ids
         )
-    
-    # If still not enough, allow repeats (no exclusions)
-    if len(selected_questions) < request.num_questions:
-        selected_questions = select_questions_for_quiz(
-            db=db,
+        
+        # If we don't have enough questions, try with less restrictive exclusions
+        if len(selected_questions) < request.num_questions:
+            # Try excluding only from the last 1 quiz instead of 2
+            recent_question_ids = get_recent_question_ids(db, request.student_id, request.grade_level, num_quizzes=1)
+            selected_questions = select_questions_for_quiz(
+                db=db,
+                grade_level=request.grade_level,
+                topics=request.topics,
+                num_questions=request.num_questions,
+                weak_topics=weak_topics if weak_topics else None,
+                exclude_question_ids=recent_question_ids
+            )
+        
+        # If still not enough, allow repeats (no exclusions)
+        if len(selected_questions) < request.num_questions:
+            selected_questions = select_questions_for_quiz(
+                db=db,
+                grade_level=request.grade_level,
+                topics=request.topics,
+                num_questions=request.num_questions,
+                weak_topics=weak_topics if weak_topics else None,
+                exclude_question_ids=set()  # No exclusions - allow repeats
+            )
+        
+        # If still not enough, use what we have (shouldn't happen with expanded bank)
+        if len(selected_questions) < request.num_questions:
+            # Log a warning but don't fail - use what we have
+            pass
+        
+        # Create quiz
+        quiz = Quiz(
+            student_id=request.student_id,
             grade_level=request.grade_level,
-            topics=request.topics,
-            num_questions=request.num_questions,
-            weak_topics=weak_topics if weak_topics else None,
-            exclude_question_ids=set()  # No exclusions - allow repeats
+            question_ids=[q.id for q in selected_questions]
         )
-    
-    # If still not enough, use what we have (shouldn't happen with expanded bank)
-    if len(selected_questions) < request.num_questions:
-        # Log a warning but don't fail - use what we have
-        pass
-    
-    # Create quiz
-    quiz = Quiz(
-        student_id=request.student_id,
-        grade_level=request.grade_level,
-        question_ids=[q.id for q in selected_questions]
-    )
-    db.add(quiz)
-    db.commit()
-    db.refresh(quiz)
-    
-    # Return quiz without correct answers
-    questions_data = [q.to_dict(include_answer=False) for q in selected_questions]
-    
-    # Track metrics
-    track_quiz_generated(quiz.grade_level, quiz_type='full')
-    
-    return QuizResponse(
-        quiz_id=quiz.id,
-        student_id=quiz.student_id,
-        grade_level=quiz.grade_level,
-        questions=questions_data,
-        created_at=quiz.created_at.isoformat()
-    )
+        db.add(quiz)
+        db.commit()
+        db.refresh(quiz)
+        
+        # Return quiz without correct answers
+        questions_data = [q.to_dict(include_answer=False) for q in selected_questions]
+        
+        # Track metrics
+        track_quiz_generated(quiz.grade_level, quiz_type='full')
+        
+        return QuizResponse(
+            quiz_id=quiz.id,
+            student_id=quiz.student_id,
+            grade_level=quiz.grade_level,
+            questions=questions_data,
+            created_at=quiz.created_at.isoformat()
+        )
+    except Exception as e:
+        import traceback
+        error_msg = f"ERROR in generate_quiz: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error generating quiz: {str(e)}")
 
 
 @router.post("/practice-topic", response_model=QuizResponse)
