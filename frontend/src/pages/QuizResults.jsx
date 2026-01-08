@@ -516,6 +516,11 @@ function QuizResults() {
               <button className="btn btn-secondary" onClick={() => navigate('/')}>
                 Home
               </button>
+              {studentId && gradeLevel && (
+                <button className="btn btn-secondary" onClick={() => navigate(`/history/${studentId}/${gradeLevel}`)}>
+                  View History
+                </button>
+              )}
             </>
           ) : (
             // Full quiz actions
@@ -532,6 +537,11 @@ function QuizResults() {
           <button className="btn btn-secondary" onClick={() => navigate('/')}>
             {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
           </button>
+          {studentId && gradeLevel && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/history/${studentId}/${gradeLevel}`)}>
+              View History
+            </button>
+          )}
             </>
           )}
         </div>

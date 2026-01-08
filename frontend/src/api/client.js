@@ -80,9 +80,13 @@ class ApiClient {
     });
   }
 
-  // Get student history
-  async getStudentHistory(studentId) {
-    return this.request(`/student/${studentId}/history`);
+  // Get student history (optionally filtered by grade level)
+  async getStudentHistory(studentId, gradeLevel = null) {
+    let url = `/student/${studentId}/history`;
+    if (gradeLevel !== null && gradeLevel !== undefined) {
+      url += `?grade_level=${gradeLevel}`;
+    }
+    return this.request(url);
   }
 
   // Get feedback

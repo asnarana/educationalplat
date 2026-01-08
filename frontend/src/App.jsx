@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import StartQuiz from './pages/StartQuiz';
 import TakeQuiz from './pages/TakeQuiz';
 import QuizResults from './pages/QuizResults';
+import StudentHistory from './pages/StudentHistory';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/" element={<StartQuiz />} />
           <Route path="/quiz/:quizId" element={<TakeQuiz />} />
           <Route path="/results/:attemptId" element={<QuizResults />} />
+          <Route path="/history/:studentId?/:gradeLevel?" element={<StudentHistory />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

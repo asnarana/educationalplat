@@ -355,9 +355,14 @@
       },
       "targets": [
         {
-          "expr": "rate(topic_weak_count[5m])",
+          "expr": "rate(topic_weak_count_total[5m])",
           "legendFormat": "{{topic}} (Grade {{grade_level}})",
           "refId": "A"
+        },
+        {
+          "expr": "sum by (topic) (topic_weak_count_total)",
+          "legendFormat": "Total - {{topic}}",
+          "refId": "B"
         }
       ],
       "title": "Weak Topics Count",

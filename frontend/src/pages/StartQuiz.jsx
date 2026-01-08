@@ -152,6 +152,19 @@ function StartQuiz() {
             >
               {seeding ? 'Seeding...' : 'Seed Question Bank'}
             </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                if (!studentId.trim()) {
+                  alert('Please enter a Student ID first before viewing history');
+                  return;
+                }
+                navigate(`/history/${studentId.trim()}/${gradeLevel}`);
+              }}
+            >
+              View Student History
+            </button>
           </div>
         </form>
       </div>
