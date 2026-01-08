@@ -26,6 +26,7 @@ class QuizGenerateRequest(BaseModel):
     grade_level: int
     topics: List[str]
     num_questions: int = 10
+    use_adaptive: bool = False  # True = use 70/30 split with weak topics, False = ignore weak topics, 2 per topic
 
 
 class TopicPracticeRequest(BaseModel):
@@ -66,45 +67,59 @@ def generate_quiz(
     """
     Generate a new quiz for a student.
     
-    If student has previous attempts, uses adaptive logic to focus on weak topics.
-    Otherwise, generates a balanced quiz across all topics.
+    - If use_adaptive=False (home page): Ignores weak topics, gives exactly 2 questions per topic
+    - If use_adaptive=True (retake from results): Uses 70/30 split (70% weak topics, 30% strong topics)
     """
-    # Get weak topics - try cache first
-    cache_key = CACHE_KEYS["student_weak_topics"].format(
-        student_id=request.student_id,
-        grade_level=request.grade_level
-    )
+    weak_topics = None
     
-    weak_topics = cache_get(cache_key)
-    
-    if weak_topics is None:
-        # Cache miss - query database
-        recent_attempt = (
-            db.query(Attempt)
-            .join(Quiz, Attempt.quiz_id == Quiz.id)
-            .filter(
-                Attempt.student_id == request.student_id,
-                Quiz.grade_level == request.grade_level
-            )
-            .order_by(Attempt.submitted_at.desc())
-            .first()
+    # If use_adaptive is True, get weak topics for 70/30 split
+    if request.use_adaptive:
+        # Get weak topics - try cache first
+        cache_key = CACHE_KEYS["student_weak_topics"].format(
+            student_id=request.student_id,
+            grade_level=request.grade_level
         )
         
-        weak_topics = recent_attempt.weak_topics if recent_attempt else []
+        weak_topics = cache_get(cache_key)
+        import sys
+        print(f"DEBUG: Retrieved weak_topics from cache: {weak_topics}", file=sys.stderr, flush=True)
         
-        # Cache the result (TTL: 1 hour)
-        cache_set(cache_key, weak_topics, ttl=3600)
+        if weak_topics is None:
+            # Cache miss - query database
+            recent_attempt = (
+                db.query(Attempt)
+                .join(Quiz, Attempt.quiz_id == Quiz.id)
+                .filter(
+                    Attempt.student_id == request.student_id,
+                    Quiz.grade_level == request.grade_level
+                )
+                .order_by(Attempt.submitted_at.desc())
+                .first()
+            )
+            
+            weak_topics = recent_attempt.weak_topics if recent_attempt else []
+            print(f"DEBUG: Retrieved weak_topics from DB: {weak_topics} (from attempt {recent_attempt.id if recent_attempt else None})", file=sys.stderr, flush=True)
+            
+            # Cache the result (TTL: 1 hour)
+            cache_set(cache_key, weak_topics, ttl=3600)
+        else:
+            print(f"DEBUG: Using cached weak_topics: {weak_topics}", file=sys.stderr, flush=True)
     
-    # Get recent question IDs to avoid repeats (same grade level only)
+    import sys
+    print(f"DEBUG: Final weak_topics passed to select_questions_for_quiz: {weak_topics}, use_adaptive={request.use_adaptive}", file=sys.stderr, flush=True)
+    
+    # Get recent question IDs to try to avoid repeats (same grade level only)
     recent_question_ids = get_recent_question_ids(db, request.student_id, request.grade_level, num_quizzes=2)
     
-    # Select questions using adaptive logic
+    # Select questions using adaptive logic (or ignoring weak topics if use_adaptive=False)
+    # IMPORTANT: Pass weak_topics as-is if use_adaptive=True, even if empty list
+    # This allows the function to distinguish between "no weak topics" vs "use adaptive mode"
     selected_questions = select_questions_for_quiz(
         db=db,
         grade_level=request.grade_level,
         topics=request.topics,
         num_questions=request.num_questions,
-        weak_topics=weak_topics if weak_topics else None,
+        weak_topics=weak_topics if request.use_adaptive else None,
         exclude_question_ids=recent_question_ids
     )
     
@@ -117,7 +132,7 @@ def generate_quiz(
             grade_level=request.grade_level,
             topics=request.topics,
             num_questions=request.num_questions,
-            weak_topics=weak_topics if weak_topics else None,
+            weak_topics=weak_topics if request.use_adaptive else None,
             exclude_question_ids=recent_question_ids
         )
     
@@ -128,7 +143,7 @@ def generate_quiz(
             grade_level=request.grade_level,
             topics=request.topics,
             num_questions=request.num_questions,
-            weak_topics=weak_topics if weak_topics else None,
+            weak_topics=weak_topics if request.use_adaptive else None,
             exclude_question_ids=set()  # No exclusions - allow repeats
         )
     

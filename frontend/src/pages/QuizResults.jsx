@@ -61,11 +61,13 @@ function QuizResults() {
 
     try {
       const rec = results.next_quiz_recommendation;
+      // use_adaptive=true for retakes/next quiz - uses 70/30 split with weak topics
       const response = await api.generateQuiz(
         studentId,
         gradeLevel || rec.grade_level,
         rec.topics,
-        rec.num_questions
+        rec.num_questions,
+        true  // use_adaptive=true - use 70/30 split with weak topics
       );
       
       // Store quiz in sessionStorage
@@ -145,11 +147,13 @@ function QuizResults() {
 
     try {
       const rec = results.next_quiz_recommendation;
+      // use_adaptive=true for retakes - uses 70/30 split with weak topics
       const response = await api.generateQuiz(
         studentId,
         gradeLevel,
         rec.topics,
-        rec.num_questions
+        rec.num_questions,
+        true  // use_adaptive=true - use 70/30 split with weak topics
       );
       
       // Store quiz in sessionStorage

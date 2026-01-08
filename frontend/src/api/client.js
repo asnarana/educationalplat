@@ -51,7 +51,8 @@ class ApiClient {
   }
 
   // Generate quiz
-  async generateQuiz(studentId, gradeLevel, topics, numQuestions = 10) {
+  // useAdaptive: true = use 70/30 split with weak topics (for retakes), false = ignore weak topics, 2 per topic (for home page)
+  async generateQuiz(studentId, gradeLevel, topics, numQuestions = 10, useAdaptive = false) {
     return this.request('/quiz/generate', {
       method: 'POST',
       body: {
@@ -59,6 +60,7 @@ class ApiClient {
         grade_level: gradeLevel,
         topics: topics,
         num_questions: numQuestions,
+        use_adaptive: useAdaptive,
       },
     });
   }

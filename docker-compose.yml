@@ -73,8 +73,7 @@ services:
       - app-network
       - monitoring
     depends_on:
-      oracle-db:
-        condition: service_healthy
+      
       redis:
         condition: service_healthy
     restart: unless-stopped
