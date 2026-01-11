@@ -2,9 +2,11 @@
 Adaptive quiz generation logic.
 Selects questions based on weak topics and avoids recent repeats.
 """
+import random
 from typing import List, Set, Dict
 from sqlalchemy.orm import Session
 from app.models import Question, Quiz, Attempt
+from app.cache import get_from_cache, set_cache, get_cache_key
 
 
 def get_recent_question_ids(
@@ -16,6 +18,8 @@ def get_recent_question_ids(
     """
     Get question IDs from the last N quizzes for a student at a specific grade level.
     
+    Uses Redis caching to improve performance during quiz generation.
+    
     Args:
         db: Database session
         student_id: Student identifier
@@ -25,6 +29,12 @@ def get_recent_question_ids(
     Returns:
         Set of question IDs that should be avoided
     """
+    # Try to get from cache first
+    cache_key = f"recent_questions:{student_id}:grade:{grade_level}:num:{num_quizzes}"
+    cached_result = get_from_cache(cache_key)
+    if cached_result is not None:
+        return set(cached_result)  # Convert list back to set
+    
     recent_quizzes = (
         db.query(Quiz)
         .filter(
@@ -39,6 +49,9 @@ def get_recent_question_ids(
     recent_question_ids = set()
     for quiz in recent_quizzes:
         recent_question_ids.update(quiz.question_ids)
+    
+    # Cache the result (1 minute TTL - short because this changes when new quizzes are created)
+    set_cache(cache_key, list(recent_question_ids), ttl=60)
     
     return recent_question_ids
 
@@ -101,8 +114,9 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Filter out already selected
+            # Filter out already selected and randomize
             available = [q for q in topic_questions if q.id not in selected_ids]
+            random.shuffle(available)  # Randomize to ensure different questions each time
             
             for q in available[:needed]:
                 if len(selected_questions) < num_questions:
@@ -121,8 +135,12 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            for q in all_available:
-                if q.id not in selected_ids and len(selected_questions) < num_questions:
+            # Randomize before selecting
+            available_list = [q for q in all_available if q.id not in selected_ids]
+            random.shuffle(available_list)
+            
+            for q in available_list:
+                if len(selected_questions) < num_questions:
                     selected_questions.append(q)
                     selected_ids.add(q.id)
         
@@ -137,11 +155,16 @@ def select_questions_for_quiz(
                 .all()
             )
             
+            # Randomize before selecting
+            random.shuffle(all_questions)
+            
             for q in all_questions:
                 if q.id not in selected_ids and len(selected_questions) < num_questions:
                     selected_questions.append(q)
                     selected_ids.add(q.id)
         
+        # Final shuffle to randomize order of selected questions
+        random.shuffle(selected_questions)
         return selected_questions[:num_questions]
     
     # Normal case: Some topics are weak, some are not - use 70/30 split
@@ -176,8 +199,9 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Filter out already selected
+            # Filter out already selected and randomize
             available = [q for q in topic_questions if q.id not in selected_ids]
+            random.shuffle(available)  # Randomize to ensure different questions each time
             
             for q in available[:needed]:
                 if len(selected_questions) < num_questions:
@@ -208,8 +232,10 @@ def select_questions_for_quiz(
                 if topic_questions:
                     # Prefer not already selected, but allow repeat if needed
                     available = [q for q in topic_questions if q.id not in selected_ids]
+                    random.shuffle(available)  # Randomize
                     if not available:
                         available = topic_questions  # Allow repeat to ensure topic is represented
+                        random.shuffle(available)  # Randomize even repeats
                     
                     if available:
                         selected_questions.append(available[0])
@@ -265,12 +291,14 @@ def select_questions_for_quiz(
             q for q in weak_query.all()
             if q.id not in selected_ids
         ]
+        random.shuffle(available_weak)  # Randomize to ensure different questions each time
         
         # Prioritize weak topics: try to get all num_weak questions from weak topics
         # If single weak topic, get all from it; if multiple, distribute evenly but ensure we get all num_weak
         if len(weak_topics) == 1:
             # Single weak topic: get all num_weak questions from it
             topic_questions = [q for q in available_weak if q.topic == weak_topics[0]]
+            random.shuffle(topic_questions)  # Randomize
             for q in topic_questions[:num_weak]:
                 if len(selected_questions) < num_weak:
                     selected_questions.append(q)
@@ -287,6 +315,7 @@ def select_questions_for_quiz(
                 needed = questions_per_weak_topic + (1 if i < remainder_weak else 0)
                 
                 topic_questions = [q for q in available_weak if q.topic == topic]
+                random.shuffle(topic_questions)  # Randomize
                 for q in topic_questions[:needed]:
                     if len(selected_questions) < num_weak:
                         selected_questions.append(q)
@@ -294,6 +323,7 @@ def select_questions_for_quiz(
             
             # Second pass: if we didn't get all num_weak questions, fill from any weak topic
             if len(selected_questions) < num_weak:
+                random.shuffle(available_weak)  # Randomize before filling
                 for q in available_weak:
                     if q.id not in selected_ids and len(selected_questions) < num_weak:
                         selected_questions.append(q)
@@ -325,11 +355,13 @@ def select_questions_for_quiz(
             q for q in review_query.all()
             if q.id not in selected_ids
         ]
+        random.shuffle(available_review)  # Randomize to ensure different questions each time
         
         # Distribute across review topics
         questions_per_review_topic = max(1, num_review // len(review_topics)) if review_topics else 0
         for topic in review_topics:
             topic_questions = [q for q in available_review if q.topic == topic]
+            random.shuffle(topic_questions)  # Randomize
             needed = min(questions_per_review_topic, len(topic_questions))
             for q in topic_questions[:needed]:
                 if len(selected_questions) < num_questions:
@@ -375,6 +407,7 @@ def select_questions_for_quiz(
                     q for q in weak_query_no_exclusions.all()
                     if q.id not in selected_ids
                 ]
+                random.shuffle(available_weak_no_exclusions)  # Randomize
                 # Fill up to num_weak from weak topics (allowing repeats if needed)
                 for q in available_weak_no_exclusions:
                     if len(selected_questions) < num_weak:
@@ -391,6 +424,7 @@ def select_questions_for_quiz(
                         )
                         .all()
                     )
+                    random.shuffle(all_weak_questions)  # Randomize
                     for q in all_weak_questions:
                         if len(selected_questions) < num_weak:
                             selected_questions.append(q)
@@ -418,6 +452,7 @@ def select_questions_for_quiz(
                 q for q in review_query.all()
                 if q.id not in selected_ids
             ]
+            random.shuffle(available_review)  # Randomize
             for q in available_review:
                 if len(selected_questions) < num_questions:
                     selected_questions.append(q)
@@ -438,6 +473,10 @@ def select_questions_for_quiz(
             # Prioritize weak topics even in this fallback
             weak_questions = [q for q in all_available if q.topic in weak_topics and q.id not in selected_ids]
             other_questions = [q for q in all_available if q.topic not in weak_topics and q.id not in selected_ids]
+            
+            # Randomize both lists
+            random.shuffle(weak_questions)
+            random.shuffle(other_questions)
             
             # First fill from weak topics if we haven't reached num_weak
             for q in weak_questions:
@@ -468,6 +507,7 @@ def select_questions_for_quiz(
                 q for q in weak_query_no_exclusions.all()
                 if q.id not in selected_ids
             ]
+            random.shuffle(available_weak_no_exclusions)  # Randomize
             for q in available_weak_no_exclusions:
                 if len(selected_questions) < num_weak:
                     selected_questions.append(q)
@@ -484,11 +524,17 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            for q in all_available_no_exclusions:
-                if q.id not in selected_ids and len(selected_questions) < num_questions:
+            # Randomize before selecting
+            available_list = [q for q in all_available_no_exclusions if q.id not in selected_ids]
+            random.shuffle(available_list)
+            
+            for q in available_list:
+                if len(selected_questions) < num_questions:
                     selected_questions.append(q)
                     selected_ids.add(q.id)
     
+    # Final shuffle to randomize order of selected questions
+    random.shuffle(selected_questions)
     return selected_questions[:num_questions]
 
 
@@ -501,6 +547,8 @@ def check_mastery_status(
     """
     Check if student has achieved mastery (2 consecutive attempts with no weak topics) for a specific grade level.
     
+    Uses Redis caching to improve performance when checking mastery status frequently.
+    
     Args:
         db: Database session
         student_id: Student identifier
@@ -510,6 +558,12 @@ def check_mastery_status(
     Returns:
         Dictionary with mastery status and details
     """
+    # Try to get from cache first
+    cache_key = f"mastery:{student_id}:grade:{grade_level}"
+    cached_result = get_from_cache(cache_key)
+    if cached_result is not None:
+        return cached_result
+    
     recent_attempts = (
         db.query(Attempt)
         .join(Quiz, Attempt.quiz_id == Quiz.id)
@@ -534,9 +588,14 @@ def check_mastery_status(
     # Mastery requires 2 consecutive perfect attempts
     mastered = consecutive_passes >= 2
     
-    return {
+    result = {
         "mastered": mastered,
         "consecutive_passes": consecutive_passes,
         "required": 2
     }
+    
+    # Cache the result (2 minutes TTL - shorter than history cache since mastery changes with new attempts)
+    set_cache(cache_key, result, ttl=120)
+    
+    return result
 

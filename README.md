@@ -2,15 +2,18 @@
 
 A quiz app that figures out what topics you're struggling with and gives you more practice on those areas. Built with FastAPI and React.
 
-**Note**: The AI feedback feature is totally optional and works for free with Ollama ( right now its this, we can change later on)
 
 ## What It Does
 
+- **Login/Register**: Students create accounts with username and password
 - **Take quizzes**: 10 questions covering different math topics
 - **See your scores**: Get a breakdown by topic so you know what you need to work on
-- **Practice weak areas**: The system automatically gives you more questions on topics you're struggling with (70% focus on weak topics)
+- **Practice weak areas**: Practice quizzes focus on specific weak topics
+- **Retake quizzes**: Retakes reuse the same quiz and add new attempts (different questions each time)
 - **Track progress**: Shows when you've mastered a grade level (2 perfect quizzes in a row)
-- **AI feedback** (optional): Get personalized study tips and practice questions using AI
+- **View history**: See all past quizzes with pagination support
+- **Admin dashboard**: Admins can view all students' histories and statistics
+- **AI feedback** : Get personalized study tips and practice questions using AI
 
 ## Project Structure
 
@@ -20,6 +23,7 @@ educationalplat/
 │   ├── main.py              # Main app file
 │   ├── models.py            # Database models
 │   ├── db.py                # Database setup
+│   ├── cache.py             # Redis caching utilities
 │   ├── logic/
 │   │   ├── scoring.py       # How we grade quizzes
 │   │   ├── adaptive.py      # Logic for picking questions based on weak topics
@@ -28,6 +32,8 @@ educationalplat/
 │   │   └── tts_provider.py  # Text-to-speech
 │   └── routes/
 │       ├── seed.py          # Populate question bank
+│       ├── auth.py          # User authentication (login/register)
+│       ├── admin.py         # Admin dashboard routes
 │       ├── quiz.py           # Generate and submit quizzes
 │       ├── history.py        # Student history
 │       ├── feedback.py      # AI feedback
@@ -47,13 +53,14 @@ educationalplat/
 ### Backend Files (FastAPI)
 
 **Core Files:**
-- **`app/main.py`**: Entry point. Sets up FastAPI app, CORS, includes all route modules
-- **`app/models.py`**: SQLAlchemy database models (Question, Quiz, Attempt, Student)
-- **`app/db.py`**: Database connection setup (SQLite) and session management
+- **`app/main.py`**: Entry point. Sets up FastAPI app, CORS, includes all route modules, auto-seeds questions on startup
+- **`app/models.py`**: SQLAlchemy database models (Question, Quiz, Attempt, User)
+- **`app/db.py`**: Database connection setup (Oracle DB) and session management
+- **`app/cache.py`**: Redis caching utilities for performance optimization
 
 **Logic Layer (`app/logic/`):**
-- **`adaptive.py`**: The "brain" - decides which questions to show based on student performance
-  - `select_questions_for_quiz()`: Picks 70% from weak topics, 30% from others
+- **`adaptive.py`**: decides which questions to show based on student performance
+  - `select_questions_for_quiz()`: Selects questions with balanced distribution (2 per topic) or single topic for practice
   - `check_mastery_status()`: Determines if student mastered the grade level
   - `get_recent_question_ids()`: Prevents showing same questions too soon
 - **`scoring.py`**: Grades answers and calculates topic scores
@@ -71,14 +78,24 @@ educationalplat/
 - **`seed.py`**: Populates question bank from `expand_questions.py`
   - `POST /seed`: Adds questions to database
   - `POST /seed/clear`: Deletes all data (for reset)
+  - Auto-seeds questions on startup if database is empty
+- **`auth.py`**: User authentication and authorization
+  - `POST /auth/register`: Register new student account
+  - `POST /auth/login`: Login with username/password
+  - `POST /auth/logout`: Logout current session
+  - `GET /auth/me`: Get current user info
+- **`admin.py`**: Admin dashboard routes
+  - `GET /admin/students`: List all students with statistics
+  - `GET /admin/students/{username}/history`: View student history (admin view)
 - **`quiz.py`**: Main quiz logic
   - `POST /quiz/generate`: Creates new quiz (uses `adaptive.py` to pick questions)
+  - `PUT /quiz/{id}/regenerate`: Regenerates questions for existing quiz (for retakes)
   - `POST /quiz/{id}/submit`: Grades quiz (uses `scoring.py`), saves attempt
   - `POST /quiz/practice-topic`: Generates topic-specific practice quiz
 - **`feedback.py`**: AI feedback endpoint
   - `POST /attempt/{id}/feedback`: Calls `feedback.py` to generate AI tips
-- **`history.py`**: Student quiz history
-  - `GET /student/{id}/history`: Returns all past quizzes and attempts
+- **`history.py`**: Student quiz history with pagination
+  - `GET /student/{id}/history`: Returns paginated past quizzes and attempts
 - **`tts.py`**: Text-to-speech endpoint (optional, not currently used)
 
 ### Frontend Files (React)
@@ -90,19 +107,31 @@ educationalplat/
   - Methods like `generateQuiz()`, `submitQuiz()`, `getFeedback()`
 
 **Pages (`frontend/src/pages/`):**
-- **`StartQuiz.jsx`**: Home page
-  - Student ID input, grade selection
-  - "Seed Question Bank" button
+- **`Login.jsx`**: Login and registration page
+  - Students can register or login with username/password
+  - Admin login redirects to admin dashboard
+- **`StartQuiz.jsx`**: Home page (after login)
+  - Grade selection
   - Starts new quiz
+  - View history button
 - **`TakeQuiz.jsx`**: Quiz-taking interface
   - Displays questions, collects answers
   - Submit button sends answers to backend
+  - Cancel button (for practice quizzes)
   - Has 🔊 button for text-to-speech (browser API)
 - **`QuizResults.jsx`**: Results page
   - Shows scores, topic breakdown, weak topics
   - "Practice [Topic]" buttons for weak topics
-  - "Retake Full Test" button (70% focus on weak topics)
+  - "Retake Full Test" button (regenerates questions, adds new attempt)
+  - "Retake Practice" button (regenerates practice quiz questions)
   - "Get AI Feedback" button (optional)
+- **`StudentHistory.jsx`**: Student quiz history
+  - Shows all quizzes with pagination
+  - Separates main quizzes and practice quizzes
+  - Filter by grade level
+- **`AdminDashboard.jsx`**: Admin dashboard
+  - Lists all students with statistics
+  - View individual student histories
 
 ### How Data Flows
 
@@ -120,13 +149,13 @@ Backend: quiz.py → scoring.py → grades answers → saves Attempt → returns
 Frontend: QuizResults.jsx displays scores and weak topics
 ```
 
-**3. Retaking with Focus on Weak Topics:**
+**3. Retaking a Quiz:**
 ```
-User → QuizResults.jsx → "Retake Full Test" → client.js → POST /quiz/generate
-Backend: quiz.py → adaptive.py → gets weak topics from last attempt
-         → select_questions_for_quiz() → 70% from weak, 30% from others
-Frontend: TakeQuiz.jsx with new questions
+User → QuizResults.jsx → "Retake Full Test" → client.js → PUT /quiz/{id}/regenerate
+Backend: quiz.py → regenerates questions for same quiz_id → updates quiz with new questions
+Frontend: TakeQuiz.jsx with new questions → Submit → Adds new attempt to same quiz
 ```
+Note: Retakes reuse the same quiz_id, so all attempts are grouped together in history.
 
 **4. Topic Practice:**
 ```
@@ -156,18 +185,23 @@ Frontend: QuizResults.jsx displays AI feedback
 - Pages store data in sessionStorage to pass between routes
 
 **Database:**
-- `Question`: Stores all quiz questions
-- `Quiz`: Stores quiz metadata (which questions, student, grade)
-- `Attempt`: Stores student answers and scores
-- `Student`: Stores student info (currently just ID)
+- `Question`: Stores all quiz questions (~164 total: 20 base + 144 expanded)
+- `Quiz`: Stores quiz metadata (which questions, student, grade, grade_quiz_number)
+- `Attempt`: Stores student answers and scores (multiple attempts per quiz)
+- `User`: Stores user accounts (username, password hash, role: student/admin)
 
 ### Key Design Decisions
 
-1. **Adaptive Logic**: Weak topics (< 80%) get 70% focus on retakes
-2. **Mastery Tracking**: 2 consecutive perfect quizzes (no weak topics) = mastery
-3. **Question Selection**: Avoids recent questions, allows repeats if needed
-4. **AI Feedback**: Optional feature, gracefully fails if LLM not configured
-5. **TTS**: Uses browser API (free) instead of backend (simpler, no setup)
+1. **Authentication**: Username/password login system, admin accounts created separately
+2. **Adaptive Logic**: Full tests use balanced distribution (2 per topic), practice quizzes focus on single weak topics
+3. **Mastery Tracking**: 2 consecutive perfect quizzes (no weak topics) = mastery
+4. **Question Selection**: Randomizes questions, avoids recent questions, allows repeats if needed
+5. **Retake Logic**: Retakes regenerate questions for same quiz_id, grouping attempts together
+6. **Question Bank**: ~164 questions (12+ per topic) for variety and randomization
+7. **Pagination**: History uses server-side pagination for performance
+8. **Caching**: Redis caches frequently accessed data (history, mastery, etc.)
+9. **AI Feedback**: Optional feature, gracefully fails if LLM not configured
+10. **TTS**: Uses browser API (free) instead of backend (simpler, no setup)
 
 ## Getting Started
 
@@ -211,33 +245,24 @@ Open `http://localhost:5173` in your browser.
 
 ### First Time Setup
 
-1. **Seed the question bank**: Click "Seed Question Bank" on the home page, or:
+1. **Question bank auto-seeds**: The database automatically seeds questions on startup if empty. No manual seeding needed!
+
+**What gets seeded:**
+- ~164 questions total (20 base + 144 expanded)
+- Grade 3: 12+ questions per topic (Addition, Subtraction, Multiplication, Division, Fractions)
+- Grade 5: 12+ questions per topic (Algebra, Geometry, Decimals, Percentages, Word Problems)
+
+**Manual seeding** (if needed):
 ```bash
 curl -X POST http://localhost:8000/seed
 ```
 
-**Why do I need to seed?**
-The database starts empty. Without seeding, there are no questions to generate quizzes from. The system needs a question bank with questions for each topic and grade level. Seeding populates the database with questions so the app can:
-- Generate quizzes with all 5 topics represented (at least 2 questions per topic)
-- Avoid errors when trying to create quizzes
-- Ensure there are enough questions even after taking multiple quizzes (some questions get excluded to prevent repeats)
+2. **Create an account**: 
+   - Go to `/login` 
+   - Click "Register" to create a student account
+   - Or login as admin (username: `admin`, password: `123`)
 
-**Note**: You only need to seed once. If you want to reset everything (clear all quizzes, attempts, and questions), you can:
-
-**Option 1: Use the frontend** - If the database already has questions, the "Seed Question Bank" button will offer to clear and reseed.
-
-**Option 2: Clear manually via API**:
-```bash
-curl -X POST http://localhost:8000/seed/clear
-```
-This deletes all questions, quizzes, and attempts. Then seed again with:
-```bash
-curl -X POST http://localhost:8000/seed
-```
-
-**Option 3: Delete the database file** - You can also just delete `grademaster.db` from the project root, and it will be recreated when you seed.
-
-2. **Start taking quizzes**: Enter a student ID, pick a grade level, and click "Start Quiz"
+3. **Start taking quizzes**: After login, pick a grade level and click "Start Quiz"
 
 ## How It Works
 
@@ -250,8 +275,8 @@ curl -X POST http://localhost:8000/seed
 ### Adaptive Practice
 
 - If you score below 80% on a topic, it's marked as "weak"
-- When you retake a quiz, 70% of questions come from your weak topics
-- The other 30% are from topics you're doing well on (for review)
+- Full tests use balanced distribution (2 questions per topic) for comprehensive assessment
+- Practice quizzes focus on a single weak topic for targeted improvement
 
 ### Mastery
 
@@ -270,32 +295,43 @@ curl -X POST http://localhost:8000/seed
 
 **What Gets Seeded:**
 
-After seeding, your database will contain approximately **60 questions** total:
+After seeding, your database will contain approximately **164 questions** total:
 
 **Grade 3** (5 topics):
-- **Addition**: ~6 questions
-- **Subtraction**: ~6 questions  
-- **Multiplication**: ~6 questions
-- **Division**: ~6 questions
-- **Fractions**: ~6 questions
+- **Addition**: 12+ questions
+- **Subtraction**: 12+ questions  
+- **Multiplication**: 12+ questions
+- **Division**: 12+ questions
+- **Fractions**: 12+ questions
 
 **Grade 5** (5 topics):
-- **Algebra**: ~6 questions
-- **Geometry**: ~6 questions
-- **Decimals**: ~6 questions
-- **Percentages**: ~6 questions
-- **Word Problems**: ~6 questions
+- **Algebra**: 12+ questions
+- **Geometry**: 12+ questions
+- **Decimals**: 12+ questions
+- **Percentages**: 12+ questions
+- **Word Problems**: 12+ questions
 
 **Why this matters:**
-- Each topic has enough questions to generate quizzes with all topics represented
-- After taking multiple quizzes, some questions get excluded to prevent repeats
-- With ~6 questions per topic, you can take several quizzes before needing to reseed
-- If you see errors or missing topics, clear and reseed to get a fresh question bank
+- Each topic has enough questions for variety and randomization
+- Questions are randomized on each quiz generation
+- Retakes will show different questions each time
+- With 12+ questions per topic, you can take many quizzes with variety
+
+### Authentication
+**POST** `/auth/register` - Register new student account
+**POST** `/auth/login` - Login with username/password
+**POST** `/auth/logout` - Logout current session
+**GET** `/auth/me` - Get current user info
 
 ### Generate Quiz
 **POST** `/quiz/generate`
 
-Creates a new quiz. If you've taken quizzes before, it automatically focuses on your weak topics.
+Creates a new quiz. If you've taken quizzes before, it automatically focuses on your weak topics. Questions are randomized for variety.
+
+### Regenerate Quiz Questions
+**PUT** `/quiz/{quiz_id}/regenerate`
+
+Regenerates questions for an existing quiz (for retakes). Updates the quiz with new randomized questions while keeping the same quiz_id, so attempts are grouped together.
 
 **Request:**
 ```json
@@ -331,9 +367,13 @@ Submit your answers and get results.
 - Recommendation for next quiz
 
 ### Get Student History
-**GET** `/student/{student_id}/history`
+**GET** `/student/{student_id}/history?page=1&page_size=10&grade_level=3`
 
-See all your past quizzes and attempts.
+See all your past quizzes and attempts with pagination support. Supports filtering by grade level.
+
+### Admin Endpoints
+**GET** `/admin/students` - List all students with statistics (admin only)
+**GET** `/admin/students/{username}/history` - View student history (admin only)
 
 ### Get AI Feedback (Optional)
 **POST** `/attempt/{attempt_id}/feedback`
@@ -403,12 +443,41 @@ I tried to use the pip install above but was not working no matter how many time
 ## Adaptive Rules
 
 1. **Weak topics**: Topics where you scored < 80%
-2. **Next quiz**: 70% questions from weak topics, 30% from other topics
-3. **Mastery**: Pass 2 quizzes in a row with no weak topics
+2. **Full tests**: Balanced distribution (2 questions per topic) for comprehensive assessment
+3. **Practice quizzes**: Single-topic focus for targeted improvement on weak areas
+4. **Mastery**: Pass 2 quizzes in a row with no weak topics
 
 ## Database
 
-Uses SQLite - the database file `grademaster.db` is created automatically in the project root. No setup needed.
+Uses Oracle Database. Connection is configured via environment variables. The database automatically creates tables and sequences on startup. Questions are auto-seeded if the database is empty.
+
+## Redis Caching (Optional)
+
+Redis is used to cache frequently accessed data for improved performance. The app works without Redis, but caching makes it faster for students with many quizzes.
+
+### Cache Types Implemented
+
+1. **Student History** - Caches quiz history by student and grade (5 min TTL)
+2. **Mastery Status** - Caches mastery check results (2 min TTL)
+3. **Recent Question IDs** - Caches recently used questions to avoid repeats (1 min TTL)
+4. **Quiz Type** - Caches whether quiz is "practice" or "full" (10 min TTL)
+5. **Admin Student List** - Caches admin dashboard student statistics (2 min TTL)
+
+### How It Works
+
+- Cache is checked first before database queries
+- If found in cache, data is returned instantly
+- If not found, database is queried and result is stored in cache
+- Caches are automatically invalidated when new quizzes/attempts are created
+
+### Setup
+
+Redis is included in `docker-compose.yml`. Start with:
+```bash
+docker-compose up -d
+```
+
+Or install Redis manually and start `redis-server`. The app  falls back to database queries if Redis is unavailable.
 
 ## Monitoring with Prometheus & Grafana (Optional)
 

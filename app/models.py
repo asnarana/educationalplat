@@ -7,8 +7,12 @@ from typing import Optional, Dict, List, Any
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Sequence, TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from passlib.context import CryptContext
 
 Base = declarative_base()
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # Custom JSON type for Oracle compatibility
@@ -32,6 +36,42 @@ class JSONType(TypeDecorator):
             return json.loads(value)
         except (TypeError, ValueError):
             return value
+
+
+class User(Base):
+    """User model for authentication (students and admins)."""
+    __tablename__ = "users"
+
+    id = Column(Integer, Sequence('user_id_seq'), server_default=Sequence('user_id_seq').next_value(), primary_key=True)
+    username = Column(String(100), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="student")  # "student" or "admin"
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    def verify_password(self, password: str) -> bool:
+        """Verify a password against the stored hash."""
+        return pwd_context.verify(password, self.password_hash)
+    
+    @staticmethod
+    def hash_password(password: str) -> str:
+        """Hash a password."""
+        # Ensure password is not None and is a string
+        if not password:
+            raise ValueError("Password cannot be empty")
+        if not isinstance(password, str):
+            password = str(password)
+        # Bcrypt has a 72-byte limit, but this should only affect very long passwords
+        # For normal passwords, this won't be an issue
+        return pwd_context.hash(password)
+    
+    def to_dict(self) -> dict:
+        """Convert user to dictionary (without password)."""
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "created_at": self.created_at.isoformat(),
+        }
 
 
 class Question(Base):

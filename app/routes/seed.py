@@ -20,22 +20,16 @@ EXPANDED_QUESTIONS = expand_module.EXPANDED_QUESTIONS
 router = APIRouter(prefix="/seed", tags=["seed"])
 
 
-@router.post("", status_code=201)
-def seed_questions(db: Session = Depends(get_db)):
+def auto_seed_questions(db: Session, force: bool = False) -> dict:
     """
-    Seed the database with sample questions for 2 grade levels and 5 topics each.
-    
-    Creates questions for:
-    - Grade 3: Addition, Subtraction, Multiplication, Division, Fractions
-    - Grade 5: Algebra, Geometry, Decimals, Percentages, Word Problems
+    Internal function to seed questions. Returns dict with result.
+    If force=False and questions exist, returns None (doesn't seed).
+    If force=True, seeds even if questions exist.
     """
     # Check if questions already exist
     existing_count = db.query(Question).count()
-    if existing_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Database already contains {existing_count} questions. Use POST /seed/clear to clear the database first, then seed again."
-        )
+    if existing_count > 0 and not force:
+        return None  # Questions exist, don't seed
     
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
@@ -261,6 +255,85 @@ def seed_questions(db: Session = Depends(get_db)):
         "topics_per_grade": 5,
         "includes_expanded": True
     }
+
+
+def add_expanded_questions_to_existing_db(db: Session) -> dict:
+    """
+    Add expanded questions to an existing database.
+    Only adds questions that don't already exist.
+    Uses a hash-based approach to avoid CLOB comparison issues in Oracle.
+    """
+    existing_count = db.query(Question).count()
+    new_questions = []
+    
+    # Get all existing questions to check against (load into memory to avoid CLOB comparison)
+    existing_questions = db.query(Question).all()
+    existing_set = set()
+    for q in existing_questions:
+        # Create a unique key from grade_level, topic, and correct_answer
+        # This avoids CLOB comparison issues
+        key = (q.grade_level, q.topic, q.correct_answer, q.prompt)
+        existing_set.add(key)
+    
+    for q_data in EXPANDED_QUESTIONS:
+        # Create the same key for comparison
+        key = (q_data["grade_level"], q_data["topic"], q_data["correct_answer"], q_data["prompt"])
+        
+        if key not in existing_set:
+            question = Question(**q_data)
+            new_questions.append(question)
+    
+    if new_questions:
+        db.add_all(new_questions)
+        db.commit()
+        return {
+            "message": f"Added {len(new_questions)} new expanded questions to existing database",
+            "questions_added": len(new_questions),
+            "previous_count": existing_count,
+            "new_total": existing_count + len(new_questions)
+        }
+    else:
+        return {
+            "message": "All expanded questions already exist in database",
+            "questions_added": 0,
+            "previous_count": existing_count,
+            "new_total": existing_count
+        }
+
+
+@router.post("/add-expanded", status_code=200)
+def add_expanded_questions_endpoint(db: Session = Depends(get_db)):
+    """
+    Add expanded questions to the existing database.
+    Only adds questions that don't already exist.
+    """
+    result = add_expanded_questions_to_existing_db(db)
+    return result
+
+
+@router.post("", status_code=201)
+def seed_questions(db: Session = Depends(get_db)):
+    """
+    Seed the database with sample questions for 2 grade levels and 5 topics each.
+    
+    Creates questions for:
+    - Grade 3: Addition, Subtraction, Multiplication, Division, Fractions
+    - Grade 5: Algebra, Geometry, Decimals, Percentages, Word Problems
+    
+    Note: This endpoint requires the database to be empty. For automatic seeding,
+    questions are seeded on server startup if the database is empty.
+    """
+    # Check if questions already exist
+    existing_count = db.query(Question).count()
+    if existing_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Database already contains {existing_count} questions. Use POST /seed/clear to clear the database first, then seed again."
+        )
+    
+    # Use the auto_seed function
+    result = auto_seed_questions(db, force=True)
+    return result
 
 
 @router.post("/clear", status_code=200)

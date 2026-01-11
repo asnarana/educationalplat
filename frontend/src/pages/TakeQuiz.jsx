@@ -62,9 +62,23 @@ function TakeQuiz() {
       window.speechSynthesis.cancel();
     }
 
+    // Normalize text for speech: replace math symbols with spoken words
+    let normalizedText = questionText
+      .replace(/\s*-\s*/g, ' minus ')  // Replace "-" with "minus" (handles spaces around minus)
+      .replace(/\s*\+\s*/g, ' plus ')   // Replace "+" with "plus"
+      .replace(/\s*×\s*/g, ' times ')    // Replace "×" with "times"
+      // Replace "x" with "times" ONLY when it's between numbers (multiplication), not when it's a variable
+      // Pattern: number-space-x-space-number (like "5 x 3" or "2 x 5")
+      .replace(/(\d+)\s+x\s+(\d+)/g, '$1 times $2')
+      .replace(/\s*÷\s*/g, ' divided by ') // Replace "÷" with "divided by"
+      .replace(/\s*\/\s*/g, ' divided by ') // Replace "/" with "divided by"
+      .replace(/\s*=\s*/g, ' equals ')   // Replace "=" with "equals"
+      .replace(/\s+/g, ' ')              // Normalize multiple spaces to single space
+      .trim();
+
     // Use browser's built-in Web Speech API (free, no backend needed)
     if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(questionText);
+      const utterance = new SpeechSynthesisUtterance(normalizedText);
       
       // Configure voice settings
       utterance.rate = 1.2; // Slightly faster speed
@@ -151,16 +165,33 @@ function TakeQuiz() {
     }
   };
 
-  // For demo: if quiz is not loaded, try to get it from sessionStorage or generate
+  // Load quiz from sessionStorage or fetch from backend
   useEffect(() => {
-    const storedQuiz = sessionStorage.getItem(`quiz_${quizId}`);
-    if (storedQuiz) {
-      setQuiz(JSON.parse(storedQuiz));
-      setLoading(false);
-    } else {
-      // If no stored quiz, redirect to start
-      navigate('/');
-    }
+    const loadQuizData = async () => {
+      // First try sessionStorage
+      const storedQuiz = sessionStorage.getItem(`quiz_${quizId}`);
+      if (storedQuiz) {
+        setQuiz(JSON.parse(storedQuiz));
+        setLoading(false);
+        return;
+      }
+      
+      // If not in sessionStorage, try to fetch from backend
+      try {
+        const response = await api.getQuiz(quizId);
+        setQuiz(response);
+        // Store it in sessionStorage for future use
+        sessionStorage.setItem(`quiz_${quizId}`, JSON.stringify(response));
+        setLoading(false);
+      } catch (err) {
+        console.error('Error loading quiz:', err);
+        setError('Quiz not found. Please start a new quiz.');
+        setLoading(false);
+        // Don't redirect immediately - let user see the error
+      }
+    };
+    
+    loadQuizData();
   }, [quizId, navigate]);
 
   if (loading) {
@@ -287,7 +318,17 @@ function TakeQuiz() {
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => navigate('/')}
+            onClick={() => {
+              // Check if this is a practice quiz - if so, go back to results
+              const originalMainAttemptId = sessionStorage.getItem('current_practice_original_attempt');
+              if (originalMainAttemptId) {
+                // Navigate back to the original main test results
+                navigate(`/results/${originalMainAttemptId}`);
+              } else {
+                // Otherwise, go to home
+                navigate('/');
+              }
+            }}
           >
             Cancel
           </button>

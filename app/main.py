@@ -5,7 +5,7 @@ FastAPI main application entry point.
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import init_db
-from app.routes import seed, quiz, history, feedback, tts
+from app.routes import seed, quiz, history, feedback, tts, auth, admin
 from app.monitoring.middleware import PrometheusMiddleware
 from app.monitoring.metrics import get_metrics, CONTENT_TYPE_LATEST
 
@@ -29,6 +29,8 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(seed.router)
 app.include_router(quiz.router)
 app.include_router(history.router)
@@ -40,6 +42,80 @@ app.include_router(tts.router)
 async def startup_event():
     """Initialize database on startup."""
     init_db()
+    # Create default admin user if it doesn't exist
+    from app.db import SessionLocal
+    from app.models import User
+    
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.username == "admin").first()
+        
+        # Always set admin password to "123" (create new or update existing)
+        try:
+            password_hash = User.hash_password("123")
+            if not admin:
+                admin_user = User(
+                    username="admin",
+                    password_hash=password_hash,
+                    role="admin"
+                )
+                db.add(admin_user)
+                db.commit()
+                print("✅ Created default admin user: username='admin', password='123'")
+            else:
+                # Update existing admin password
+                admin.password_hash = password_hash
+                admin.role = "admin"  # Ensure role is admin
+                db.commit()
+                print("✅ Updated admin password to '123'")
+        except Exception as e:
+            print(f"⚠️  Error setting admin password: {e}")
+            # If there's a corrupted admin user, delete and recreate
+            if admin:
+                try:
+                    db.delete(admin)
+                    db.commit()
+                    password_hash = User.hash_password("123")
+                    admin_user = User(
+                        username="admin",
+                        password_hash=password_hash,
+                        role="admin"
+                    )
+                    db.add(admin_user)
+                    db.commit()
+                    print("✅ Recreated admin user with password '123'")
+                except Exception as recreate_error:
+                    print(f"⚠️  Could not recreate admin user: {recreate_error}")
+    except Exception as e:
+        print(f"⚠️  Note: Could not create/update admin user: {e}")
+    finally:
+        db.close()
+    
+    # Auto-seed questions if database is empty
+    try:
+        from app.routes.seed import auto_seed_questions
+        db = SessionLocal()
+        try:
+            result = auto_seed_questions(db, force=False)
+            if result:
+                print(f"✅ Auto-seeded {result['questions_created']} questions on startup")
+            else:
+                # Questions already exist, but check if expanded questions need to be added
+                from app.routes.seed import add_expanded_questions_to_existing_db
+                expand_result = add_expanded_questions_to_existing_db(db)
+                if expand_result['questions_added'] > 0:
+                    print(f"✅ Added {expand_result['questions_added']} expanded questions. Total: {expand_result['new_total']} questions.")
+                else:
+                    # Questions already exist, no need to seed
+                    from app.models import Question
+                existing_count = db.query(Question).count()
+                print(f"ℹ️  Question bank already contains {existing_count} questions (skipping auto-seed)")
+        except Exception as seed_error:
+            print(f"⚠️  Could not auto-seed questions: {seed_error}")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"⚠️  Note: Could not auto-seed questions: {e}")
 
 
 @app.get("/")
