@@ -184,19 +184,19 @@ def parse_llm_response(response: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         pass
     
-    # If parsing fails, try to find JSON object in the response
-    start_idx = response.find("{")
+        # If parsing fails, try to find JSON object in the response
+        start_idx = response.find("{")
     if start_idx == -1:
         raise ValueError(f"No JSON object found in response. Response: {response[:500]}")
     
     # Try to find the end of the JSON object
-    end_idx = response.rfind("}")
+        end_idx = response.rfind("}")
     if end_idx != -1 and end_idx > start_idx:
-        try:
-            return json.loads(response[start_idx:end_idx + 1])
-        except json.JSONDecodeError:
-            pass
-    
+            try:
+                return json.loads(response[start_idx:end_idx + 1])
+            except json.JSONDecodeError:
+                pass
+        
     # If still failing, try to fix incomplete JSON by closing brackets/braces
     # This handles cases where the response was truncated mid-JSON
     try:
