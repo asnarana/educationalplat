@@ -66,7 +66,9 @@ def get_student_history(
     if grade_level is not None:
         query = query.filter(Quiz.grade_level == grade_level)
     
-    quizzes = query.order_by(Quiz.created_at.desc()).all()
+    # Order by grade level, then by grade_quiz_number (so grade-specific IDs are sequential)
+    # Most recent first within each grade
+    quizzes = query.order_by(Quiz.grade_level.desc(), Quiz.grade_quiz_number.desc()).all()
     
     # Get quiz IDs for this student/grade combination
     quiz_ids = [q.id for q in quizzes]
@@ -88,7 +90,7 @@ def get_student_history(
         
         # Determine if this is a practice or full quiz
         quiz_info = determine_quiz_type(quiz, db)
-        quiz_dict = quiz.to_dict()
+        quiz_dict = quiz.to_dict(db_session=db)  # Pass db session for grade_quiz_number calculation if needed
         quiz_dict.update(quiz_info)  # Add quiz_type and practice_topic
         
         quiz_history.append({

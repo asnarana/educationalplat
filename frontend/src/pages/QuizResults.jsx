@@ -345,8 +345,59 @@ function QuizResults() {
           <div style={{ marginTop: '20px', padding: '15px', background: '#f0f7ff', borderRadius: '8px' }}>
             <strong>Grade Level Mastery Status:</strong>
             {results.mastery_status.mastered ? (
-              <div style={{ marginTop: '10px', color: '#28a745', fontWeight: 'bold' }}>
-                ✅ Grade Level Mastered! You've passed 2 consecutive full tests with no weak topics.
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ color: '#28a745', fontWeight: 'bold', marginBottom: '10px' }}>
+                  ✅ Grade Level {gradeLevel} Mastered! You've passed 2 consecutive full tests with no weak topics.
+                </div>
+                {results.next_grade_level && (
+                  <div style={{ marginTop: '15px', padding: '15px', background: '#d4edda', borderRadius: '8px', border: '2px solid #28a745' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '10px', fontSize: '16px' }}>
+                      🎉 Ready for the Next Level!
+                    </div>
+                    <p style={{ marginBottom: '15px' }}>
+                      You've mastered Grade {gradeLevel}! You can now move up to <strong>Grade {results.next_grade_level}</strong> questions.
+                    </p>
+                    <button
+                      className="btn"
+                      onClick={async () => {
+                        if (!studentId) {
+                          alert('Cannot generate quiz. Please start a new quiz from the home page.');
+                          return;
+                        }
+                        setGeneratingNext(true);
+                        setError(null);
+                        try {
+                          const topics = {
+                            3: ['Addition', 'Subtraction', 'Multiplication', 'Division', 'Fractions'],
+                            5: ['Algebra', 'Geometry', 'Decimals', 'Percentages', 'Word Problems'],
+                          };
+                          const response = await api.generateQuiz(
+                            studentId,
+                            results.next_grade_level,
+                            topics[results.next_grade_level],
+                            10
+                          );
+                          sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
+                          navigate(`/quiz/${response.quiz_id}`);
+                        } catch (err) {
+                          setError(err.message || 'Failed to generate Grade 5 quiz');
+                        } finally {
+                          setGeneratingNext(false);
+                        }
+                      }}
+                      disabled={generatingNext}
+                      style={{ 
+                        backgroundColor: '#28a745', 
+                        color: 'white',
+                        fontSize: '16px',
+                        padding: '12px 24px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {generatingNext ? 'Loading...' : `🚀 Start Grade ${results.next_grade_level} Quiz`}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ marginTop: '10px' }}>
@@ -537,9 +588,9 @@ function QuizResults() {
           <button className="btn btn-secondary" onClick={() => navigate('/')}>
             {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
           </button>
-          {studentId && gradeLevel && (
-            <button className="btn btn-secondary" onClick={() => navigate(`/history/${studentId}/${gradeLevel}`)}>
-              View History
+          {studentId && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/history/${studentId}`)}>
+              View History (All Grades)
             </button>
           )}
             </>

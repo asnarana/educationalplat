@@ -289,6 +289,53 @@ def clear_database(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error clearing questions: {str(e)}")
 
 
+@router.post("/migrate/grade-quiz-numbers", status_code=200)
+def migrate_grade_quiz_numbers(db: Session = Depends(get_db)):
+    """
+    Migrate existing quizzes to have grade_quiz_number set.
+    This adds the column if it doesn't exist, then backfills the grade_quiz_number field for quizzes.
+    
+    Each student+grade combination will have sequential IDs starting from 1.
+    """
+    from app.models import Quiz
+    from app.db import engine
+    from sqlalchemy import text, inspect
+    
+    try:
+        # First, check if the column exists and add it if it doesn't
+        inspector = inspect(engine)
+        columns = [col['name'].upper() for col in inspector.get_columns('quizzes')]
+        
+        if 'GRADE_QUIZ_NUMBER' not in columns:
+            # Add the column
+            with engine.connect() as conn:
+                add_column = text("ALTER TABLE quizzes ADD grade_quiz_number INTEGER")
+                conn.execute(add_column)
+                conn.commit()
+            
+            # Add index for better query performance
+            try:
+                with engine.connect() as conn:
+                    add_index = text("CREATE INDEX idx_quizzes_grade_quiz_number ON quizzes(student_id, grade_level, grade_quiz_number)")
+                    conn.execute(add_index)
+                    conn.commit()
+            except Exception as idx_err:
+                # Index might already exist or fail for other reasons, that's okay
+                print(f"Note: Could not create index (may already exist): {idx_err}")
+        
+        # Now backfill the grade_quiz_number values
+        updated_count = Quiz.backfill_grade_quiz_numbers(db)
+        
+        return {
+            "message": f"Successfully migrated {updated_count} quizzes with grade_quiz_number",
+            "updated_count": updated_count,
+            "column_added": 'GRADE_QUIZ_NUMBER' not in columns if 'GRADE_QUIZ_NUMBER' not in columns else False
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error migrating grade_quiz_numbers: {str(e)}")
+
+
 @router.post("/clear-all", status_code=200)
 def clear_all_database(db: Session = Depends(get_db)):
     """

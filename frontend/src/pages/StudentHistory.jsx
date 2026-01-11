@@ -12,8 +12,9 @@ function StudentHistory() {
   const [inputGradeLevel, setInputGradeLevel] = useState(gradeLevel ? parseInt(gradeLevel) : 3);
 
   useEffect(() => {
-    if (studentId && gradeLevel) {
-      loadHistory(studentId, parseInt(gradeLevel));
+    if (studentId) {
+      // If gradeLevel is provided, use it; otherwise show all grades (pass null)
+      loadHistory(studentId, gradeLevel ? parseInt(gradeLevel) : null);
     } else {
       setLoading(false);
     }
@@ -23,7 +24,8 @@ function StudentHistory() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getStudentHistory(sid, grade);
+      // If grade is provided, filter by grade; otherwise show all grades
+      const data = await api.getStudentHistory(sid, grade || null);
       setHistory(data);
     } catch (err) {
       setError(err.message || 'Failed to load student history');
@@ -35,8 +37,13 @@ function StudentHistory() {
 
   const handleViewHistory = (e) => {
     e.preventDefault();
-    if (inputStudentId.trim() && inputGradeLevel) {
-      navigate(`/history/${inputStudentId}/${inputGradeLevel}`);
+    if (inputStudentId.trim()) {
+      // If grade level is selected, include it; otherwise show all grades
+      if (inputGradeLevel) {
+        navigate(`/history/${inputStudentId}/${inputGradeLevel}`);
+      } else {
+        navigate(`/history/${inputStudentId}`);
+      }
     }
   };
 
@@ -54,7 +61,7 @@ function StudentHistory() {
       <div style={{ maxWidth: '800px', margin: '2rem auto', padding: '2rem' }}>
         <h1>View Student History</h1>
         <p style={{ marginBottom: '1rem', color: '#666' }}>
-          Enter student ID and grade level to view history. The same student ID can have separate histories for different grade levels.
+          Enter student ID to view history. You can filter by grade level or view all grades. The same student ID can have separate histories for different grade levels.
         </p>
         <form onSubmit={handleViewHistory} style={{ marginBottom: '2rem' }}>
           <div style={{ marginBottom: '1rem' }}>
@@ -84,8 +91,8 @@ function StudentHistory() {
             </label>
             <select
               id="gradeLevel"
-              value={inputGradeLevel}
-              onChange={(e) => setInputGradeLevel(Number(e.target.value))}
+              value={inputGradeLevel || ''}
+              onChange={(e) => setInputGradeLevel(e.target.value ? Number(e.target.value) : null)}
               style={{
                 padding: '0.5rem',
                 fontSize: '1rem',
@@ -94,8 +101,8 @@ function StudentHistory() {
                 border: '1px solid #ccc',
                 borderRadius: '4px'
               }}
-              required
             >
+              <option value="">All Grades</option>
               <option value={3}>Grade 3</option>
               <option value={5}>Grade 5</option>
             </select>
@@ -168,9 +175,9 @@ function StudentHistory() {
   if (!history || !history.history || history.history.length === 0) {
     return (
       <div style={{ maxWidth: '1200px', margin: '2rem auto', padding: '2rem' }}>
-        <h1>Student History: {studentId} (Grade {gradeLevel})</h1>
+        <h1>Student History: {studentId}{gradeLevel ? ` (Grade ${gradeLevel})` : ' (All Grades)'}</h1>
         <p style={{ fontSize: '1.1rem', marginBottom: '2rem' }}>
-          No quiz history found for this student at Grade {gradeLevel}.
+          No quiz history found for this student{gradeLevel ? ` at Grade ${gradeLevel}` : ''}.
         </p>
         <button
           onClick={() => navigate('/')}
@@ -194,23 +201,49 @@ function StudentHistory() {
 
   return (
       <div style={{ maxWidth: '1200px', margin: '2rem auto', padding: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <h1>Student History: {studentId} (Grade {gradeLevel})</h1>
-        <button
-          onClick={() => navigate('/')}
-          style={{
-            padding: '0.5rem 1rem',
-            fontSize: '0.9rem',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Back to Home
-        </button>
-      </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h1 style={{ margin: 0 }}>Student History: {studentId}{gradeLevel ? ` (Grade ${gradeLevel})` : ' (All Grades)'}</h1>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <label htmlFor="gradeFilter" style={{ fontSize: '0.9rem', marginRight: '0.5rem' }}>Filter:</label>
+            <select
+              id="gradeFilter"
+              value={gradeLevel || ''}
+              onChange={(e) => {
+                const selectedGrade = e.target.value ? parseInt(e.target.value) : null;
+                if (selectedGrade) {
+                  navigate(`/history/${studentId}/${selectedGrade}`);
+                } else {
+                  navigate(`/history/${studentId}`);
+                }
+              }}
+              style={{
+                padding: '0.5rem',
+                fontSize: '0.9rem',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                marginRight: '1rem'
+              }}
+            >
+              <option value="">All Grades</option>
+              <option value="3">Grade 3</option>
+              <option value="5">Grade 5</option>
+            </select>
+            <button
+              onClick={() => navigate('/')}
+              style={{
+                padding: '0.5rem 1rem',
+                fontSize: '0.9rem',
+                backgroundColor: '#6c757d',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
 
       {/* Summary Section */}
       <div style={{
@@ -279,7 +312,7 @@ function StudentHistory() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <h3 style={{ margin: 0 }}>Quiz #{quiz.id}</h3>
+                    <h3 style={{ margin: 0 }}>Quiz #{quiz.grade_quiz_number || quiz.id} (Grade {quiz.grade_level})</h3>
                     {quiz.quiz_type === 'practice' ? (
                       <span style={{
                         padding: '0.25rem 0.5rem',

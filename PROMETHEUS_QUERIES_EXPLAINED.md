@@ -67,6 +67,9 @@ Standard aggregation functions.
 
 **Average score:**
 ```
+
+
+
 quiz_scores_sum / quiz_scores_count
 ```
 

@@ -71,16 +71,98 @@ class Quiz(Base):
 
     id = Column(Integer, Sequence('quiz_id_seq'), server_default=Sequence('quiz_id_seq').next_value(), primary_key=True)
     student_id = Column(String(100), nullable=False, index=True)
-    grade_level = Column(Integer, nullable=False)
+    grade_level = Column(Integer, nullable=False, index=True)
+    grade_quiz_number = Column(Integer, nullable=True)  # Unique ID within this student+grade combination (starts at 1). Nullable for migration compatibility.
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     question_ids = Column(JSONType, nullable=False)  # List of question IDs (JSON stored as Text)
 
     attempts = relationship("Attempt", back_populates="quiz", cascade="all, delete-orphan")
 
-    def to_dict(self) -> dict:
-        """Convert quiz to dictionary."""
+    @staticmethod
+    def get_next_grade_quiz_number(db_session, student_id: str, grade_level: int) -> int:
+        """
+        Get the next grade_quiz_number for a student+grade combination.
+        This ensures each grade level starts at 1 and increments independently.
+        
+        Args:
+            db_session: Database session
+            student_id: Student identifier
+            grade_level: Grade level
+            
+        Returns:
+            Next grade_quiz_number (starts at 1 for first quiz in this grade)
+        """
+        from sqlalchemy import func
+        max_number = db_session.query(func.max(Quiz.grade_quiz_number)).filter(
+            Quiz.student_id == student_id,
+            Quiz.grade_level == grade_level
+        ).scalar()
+        
+        return (max_number or 0) + 1
+    
+    @staticmethod
+    def backfill_grade_quiz_numbers(db_session):
+        """
+        Backfill grade_quiz_number for existing quizzes that don't have it set.
+        This is a migration helper function.
+        
+        Args:
+            db_session: Database session
+        """
+        # Get all quizzes without grade_quiz_number, ordered by student_id, grade_level, and created_at
+        quizzes_to_update = db_session.query(Quiz).filter(
+            Quiz.grade_quiz_number.is_(None)
+        ).order_by(Quiz.student_id, Quiz.grade_level, Quiz.created_at).all()
+        
+        if not quizzes_to_update:
+            return 0
+        
+        # Group by student_id and grade_level, then assign sequential numbers
+        current_student = None
+        current_grade = None
+        current_number = 0
+        updated_count = 0
+        
+        for quiz in quizzes_to_update:
+            if quiz.student_id != current_student or quiz.grade_level != current_grade:
+                # New student+grade combination, reset counter
+                current_student = quiz.student_id
+                current_grade = quiz.grade_level
+                current_number = 1
+            else:
+                # Same student+grade, increment
+                current_number += 1
+            
+            quiz.grade_quiz_number = current_number
+            updated_count += 1
+        
+        db_session.commit()
+        return updated_count
+
+    def to_dict(self, db_session=None) -> dict:
+        """
+        Convert quiz to dictionary.
+        
+        Args:
+            db_session: Optional database session (needed if grade_quiz_number is None and needs calculation)
+        """
+        grade_quiz_number = self.grade_quiz_number
+        # If grade_quiz_number is None (for old quizzes), calculate it based on position
+        if grade_quiz_number is None and db_session is not None:
+            # Count how many quizzes exist for this student+grade before this one (by created_at)
+            from sqlalchemy import and_
+            earlier_count = db_session.query(Quiz).filter(
+                and_(
+                    Quiz.student_id == self.student_id,
+                    Quiz.grade_level == self.grade_level,
+                    Quiz.created_at < self.created_at
+                )
+            ).count()
+            grade_quiz_number = earlier_count + 1
+        
         return {
             "id": self.id,
+            "grade_quiz_number": grade_quiz_number,  # Grade-specific ID
             "student_id": self.student_id,
             "grade_level": self.grade_level,
             "created_at": self.created_at.isoformat(),

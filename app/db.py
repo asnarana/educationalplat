@@ -41,6 +41,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """Initialize database by creating all tables and sequences."""
+    from sqlalchemy import inspect
+    
     # Create sequences first (Oracle requires explicit sequence creation)
     sequences = [
         ('question_id_seq', 'questions'),
@@ -66,6 +68,22 @@ def init_db():
     
     # Create all tables (this will also handle foreign keys and indexes)
     Base.metadata.create_all(bind=engine)
+    
+    # Check if quizzes table exists and add grade_quiz_number column if missing
+    inspector = inspect(engine)
+    table_names = [name.upper() for name in inspector.get_table_names()]
+    if 'QUIZZES' in table_names:
+        try:
+            columns = [col['name'].upper() for col in inspector.get_columns('quizzes')]
+            if 'GRADE_QUIZ_NUMBER' not in columns:
+                with engine.connect() as conn:
+                    add_column = text("ALTER TABLE quizzes ADD grade_quiz_number INTEGER")
+                    conn.execute(add_column)
+                    conn.commit()
+                    print("Added grade_quiz_number column to quizzes table")
+        except Exception as e:
+            # Column might already exist or there might be a race condition
+            print(f"Note: Could not add grade_quiz_number column (may already exist): {e}")
 
 
 def get_db() -> Session:

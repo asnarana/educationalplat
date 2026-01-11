@@ -38,6 +38,7 @@ class QuizSubmitRequest(BaseModel):
 
 class QuizResponse(BaseModel):
     quiz_id: int
+    grade_quiz_number: int  # Grade-specific ID (starts at 1 for each grade)
     student_id: str
     grade_level: int
     questions: List[Dict]
@@ -53,6 +54,7 @@ class SubmissionResponse(BaseModel):
     passed: bool
     mastery_status: Dict[str, Any]
     next_quiz_recommendation: Optional[Dict] = None
+    next_grade_level: Optional[int] = None  # Next grade level available if current grade is mastered
 
 
 @router.post("/generate", response_model=QuizResponse)
@@ -123,10 +125,14 @@ def generate_quiz(
             # Log a warning but don't fail - use what we have
             pass
         
+        # Get next grade-specific quiz number for this student+grade combination
+        grade_quiz_number = Quiz.get_next_grade_quiz_number(db, request.student_id, request.grade_level)
+        
         # Create quiz
         quiz = Quiz(
             student_id=request.student_id,
             grade_level=request.grade_level,
+            grade_quiz_number=grade_quiz_number,
             question_ids=[q.id for q in selected_questions]
         )
         db.add(quiz)
@@ -141,6 +147,7 @@ def generate_quiz(
         
         return QuizResponse(
             quiz_id=quiz.id,
+            grade_quiz_number=quiz.grade_quiz_number,
             student_id=quiz.student_id,
             grade_level=quiz.grade_level,
             questions=questions_data,
@@ -238,10 +245,14 @@ def generate_topic_practice_quiz(
     # Use unique lists
     selected_questions = unique_selected_questions
     
+    # Get next grade-specific quiz number for this student+grade combination
+    grade_quiz_number = Quiz.get_next_grade_quiz_number(db, request.student_id, request.grade_level)
+    
     # Create quiz
     quiz = Quiz(
         student_id=request.student_id,
         grade_level=request.grade_level,
+        grade_quiz_number=grade_quiz_number,
         question_ids=unique_question_ids
     )
     db.add(quiz)
@@ -337,7 +348,17 @@ def submit_quiz(
     
     # Generate next quiz recommendation
     next_quiz_recommendation = None
-    if not mastery_status["mastered"]:
+    next_grade_level = None
+    
+    if mastery_status["mastered"]:
+        # If mastered, check if there's a next grade level available
+        # Grade 3 -> Grade 5, Grade 5 -> None (highest level)
+        if quiz.grade_level == 3:
+            next_grade_level = 5
+        elif quiz.grade_level == 5:
+            next_grade_level = None  # Already at highest level
+    else:
+        # Not mastered yet, recommend retake at same grade level
         next_quiz_recommendation = {
             "student_id": quiz.student_id,
             "grade_level": quiz.grade_level,
@@ -355,6 +376,7 @@ def submit_quiz(
         weak_topics=weak_topics,
         passed=passed,
         mastery_status=mastery_status,
-        next_quiz_recommendation=next_quiz_recommendation
+        next_quiz_recommendation=next_quiz_recommendation,
+        next_grade_level=next_grade_level  # Available next grade level if mastered
     )
 

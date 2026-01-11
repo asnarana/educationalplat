@@ -117,6 +117,48 @@ def db_status():
         }
 
 
+@app.get("/db/quizzes")
+def list_all_quizzes():
+    """List all quizzes in the database with their IDs and details."""
+    from app.db import SessionLocal
+    from app.models import Quiz, Attempt
+    
+    db = SessionLocal()
+    try:
+        quizzes = db.query(Quiz).order_by(Quiz.student_id, Quiz.grade_level, Quiz.created_at).all()
+        
+        quiz_list = []
+        for quiz in quizzes:
+            # Get attempts for this quiz
+            attempts = db.query(Attempt).filter(Attempt.quiz_id == quiz.id).all()
+            
+            quiz_list.append({
+                "id": quiz.id,
+                "student_id": quiz.student_id,
+                "grade_level": quiz.grade_level,
+                "grade_quiz_number": quiz.grade_quiz_number,
+                "created_at": quiz.created_at.isoformat(),
+                "num_questions": len(quiz.question_ids),
+                "num_attempts": len(attempts),
+                "attempts": [
+                    {
+                        "attempt_id": a.id,
+                        "score": round(a.score_total * 100, 1),
+                        "passed": a.passed,
+                        "weak_topics": a.weak_topics
+                    }
+                    for a in attempts
+                ]
+            })
+        
+        return {
+            "total_quizzes": len(quiz_list),
+            "quizzes": quiz_list
+        }
+    finally:
+        db.close()
+
+
 @app.get("/metrics")
 def metrics():
     """Prometheus metrics endpoint."""
