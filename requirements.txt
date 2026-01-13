@@ -21,3 +21,5 @@ piper-tts>=1.2.0  # For Piper TTS (recommended - lightweight, fast)
 # TTS>=0.20.0  # For Coqui TTS (alternative - uncomment if using Coqui)
 # soundfile>=0.12.0  # Required for Coqui TTS (uncomment if using Coqui)
 
+# Redis for caching
+redis>=5.0.0  # Redis client for Python
