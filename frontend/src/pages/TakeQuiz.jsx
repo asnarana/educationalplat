@@ -347,18 +347,88 @@ function TakeQuiz() {
           
           const { passage, question: questionText, hasPassage, isBothParts, passageParts } = parseReadingPrompt(question.prompt);
           
-          // Extract passage titles/names based on content
+          // Extract passage title and author from text
+          const extractTitleAndAuthor = (passageText) => {
+            if (!passageText) return { title: null, author: null };
+            
+            const lines = passageText.split('\n').map(l => l.trim()).filter(l => l);
+            
+            // Look for title on first line and "by Author" on second line
+            let title = null;
+            let author = null;
+            
+            if (lines.length > 0) {
+              // Check if first line looks like a title (not a paragraph number, not "Part 1/2")
+              const firstLine = lines[0];
+              if (!firstLine.match(/^\d+$/) && 
+                  !firstLine.match(/^Part\s+[12]$/i) &&
+                  firstLine.length > 3 && firstLine.length < 100) {
+                title = firstLine;
+                
+                // Check second line for "by Author" pattern
+                if (lines.length > 1) {
+                  const secondLine = lines[1];
+                  const byMatch = secondLine.match(/^by\s+(.+)$/i);
+                  if (byMatch) {
+                    author = byMatch[1];
+                  } else if (secondLine.match(/^This\s+article|^This\s+text/i)) {
+                    // Skip lines like "This article was written in 2006"
+                    // Check third line for author
+                    if (lines.length > 2) {
+                      const thirdLine = lines[2];
+                      const byMatch2 = thirdLine.match(/^by\s+(.+)$/i);
+                      if (byMatch2) {
+                        author = byMatch2[1];
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            
+            return { title, author };
+          };
+          
+          // Extract passage titles/names based on content (fallback if title extraction fails)
           const extractPassageTitle = (passageText, partIndex = 0) => {
             if (!passageText) return null;
             
-            // Detect passage by key phrases/content
-            // Part 2 may have different keywords, so we check for both parts
+            // First try to extract title and author directly from text
+            const { title, author } = extractTitleAndAuthor(passageText);
+            if (title) {
+              let displayTitle = title;
+              if (author) {
+                displayTitle = `${title}\nby ${author}`;
+              }
+              // Add part number if applicable
+              const passageDetectors = [
+                { keywords: ['Rhode Island Red', 'rooster'], hasParts: true },
+                { keywords: ['Lois Ehlert', 'Under My Nose'], hasParts: true },
+                { keywords: ['Grandfather Frog', 'Billy Mink'], hasParts: true },
+                { keywords: ['beaver', 'dam'], hasParts: true },
+                { keywords: ['Velvet', 'Mount Hood'], hasParts: true }
+              ];
+              
+              const passageLower = passageText.toLowerCase();
+              const hasParts = passageDetectors.some(d => 
+                d.keywords.some(k => passageLower.includes(k.toLowerCase()))
+              );
+              
+              if (hasParts && partIndex >= 0) {
+                displayTitle += `\n(Part ${partIndex === 0 ? '1' : '2'})`;
+              }
+              
+              return displayTitle;
+            }
+            
+            // Fallback: Detect passage by key phrases/content
             const passageDetectors = [
               {
                 keywords: partIndex === 0 
                   ? ['Rhode Island Red', 'rooster', 'poultry tent', 'county fairgrounds']
                   : ['Rhode Island Red', 'boy', 'oats', 'midway', 'cages'],
                 title: 'The Great Escape',
+                author: 'Susan Mitsch',
                 part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
               },
               {
@@ -366,6 +436,7 @@ function TakeQuiz() {
                   ? ['Lois Ehlert', 'Growing Vegetable Soup', 'handmade books', 'Milwaukee', 'circus parade']
                   : ['dummy book', 'thumbnail sketches', 'typewriter', 'sunroom', 'collage', 'Milwaukee'],
                 title: 'Excerpt from Under My Nose',
+                author: 'Lois Ehlert',
                 part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
               },
               {
@@ -373,6 +444,7 @@ function TakeQuiz() {
                   ? ['Grandfather Frog', 'Billy Mink', 'Little Joe Otter', 'Smiling Pool']
                   : ['Grandfather Frog', 'Jerry', 'pounded the water', 'Little Joe Otter', 'Longlegs'],
                 title: 'Adapted from The Adventures of Grandfather Frog: "Billy Mink Finds Little Joe Otter"',
+                author: 'Thornton W. Burgess',
                 part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
               },
               {
@@ -380,6 +452,7 @@ function TakeQuiz() {
                   ? ['beaver', 'dam', 'sticks and logs', 'foundation']
                   : ['beaver', 'village', 'winter homes', 'Frenchman', 'Louisiana', 'hole'],
                 title: 'Adapted from "Beavers at Home"',
+                author: 'James Baldwin',
                 part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
               },
               {
@@ -387,7 +460,33 @@ function TakeQuiz() {
                   ? ['Velvet', 'Mount Hood', 'climbers', 'German shepherd', 'transmitter']
                   : ['Velvet', 'rescue team', 'White River Canyon', 'forest ranger station', 'extra treats'],
                 title: 'Excerpt from "Dog a Hero on Mount Hood"',
+                author: 'Susan Jankowski',
                 part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
+              },
+              // Grade 4 Reading Passages
+              {
+                keywords: ['Libby', 'Alaskan huskies', 'sled', 'Timber and Tucker', 'dogs', 'anchor'],
+                title: 'Libby Saves the Team',
+                author: 'Kristine Nielsen',
+                part: ''
+              },
+              {
+                keywords: ['Amelia Earhart', 'Friendship', 'Lockheed Vega', 'Ninety-Nines', 'Fred Noonan', 'navigator'],
+                title: 'Excerpt from Amelia Earhart',
+                author: 'Marilyn Rosenthal and Daniel Freeman',
+                part: ''
+              },
+              {
+                keywords: ['Chef Justus', 'Hershey Lodge', 'chocolate', 'Thanksgiving', 'culinary', 'sous chef'],
+                title: "What's It Like to Be a Chef?",
+                author: '',
+                part: ''
+              },
+              {
+                keywords: ['Trigger', 'cocker spaniel', 'Charlie', 'railroad', 'red flag', 'switch'],
+                title: 'Adapted from "A Regular Railroad Dog"',
+                author: 'Avis J. Kirsch',
+                part: ''
               }
             ];
             
@@ -401,7 +500,14 @@ function TakeQuiz() {
               // If at least 2 keywords match (or 1 for Part 2 if we're being lenient), it's likely this passage
               const threshold = partIndex === 1 ? 1 : 2; // More lenient for Part 2
               if (matchCount >= threshold) {
-                return `${detector.title} ${detector.part}`;
+                let displayTitle = detector.title;
+                if (detector.author) {
+                  displayTitle = `${detector.title}\nby ${detector.author}`;
+                }
+                if (detector.part) {
+                  displayTitle += `\n${detector.part}`;
+                }
+                return displayTitle;
               }
             }
             
@@ -438,6 +544,58 @@ function TakeQuiz() {
             {hasPassage && passage && (() => {
               // Always show the FULL passage text
               // The `passage` variable already contains the complete text
+              // Clean passage text: remove title, author, and "Part 1" and "Part 2" headers since they're in the title box
+              const cleanPassageText = (text) => {
+                if (!text) return text;
+                
+                const lines = text.split('\n');
+                let cleanedLines = [];
+                let skipNext = false;
+                let foundTitle = false;
+                let foundAuthor = false;
+                
+                for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i].trim();
+                  
+                  // Skip empty lines at the start
+                  if (cleanedLines.length === 0 && !line) continue;
+                  
+                  // Skip "Part 1" or "Part 2" lines
+                  if (line.match(/^Part\s+[12]$/i)) {
+                    skipNext = true;
+                    continue;
+                  }
+                  
+                  // Skip title (first non-empty line that's not a paragraph number)
+                  if (!foundTitle && line && !line.match(/^\d+$/) && line.length < 100) {
+                    foundTitle = true;
+                    skipNext = true;
+                    continue;
+                  }
+                  
+                  // Skip "by Author" line
+                  if (foundTitle && !foundAuthor && line.match(/^by\s+.+$/i)) {
+                    foundAuthor = true;
+                    continue;
+                  }
+                  
+                  // Skip "This article/text was written..." lines
+                  if (foundTitle && line.match(/^This\s+(article|text)\s+was\s+written/i)) {
+                    continue;
+                  }
+                  
+                  // Skip next line if we just skipped title
+                  if (skipNext) {
+                    skipNext = false;
+                    continue;
+                  }
+                  
+                  cleanedLines.push(lines[i]); // Keep original line with spacing
+                }
+                
+                return cleanedLines.join('\n').trim();
+              };
+              
               // For "both parts" questions, try to split into Part 1 and Part 2 for visual separation
               let displayParts = [];
               
@@ -451,11 +609,11 @@ function TakeQuiz() {
                     passageParts[0].length > 200 && 
                     passageParts[1].length > 200) {
                   // Likely already split correctly into Part 1 and Part 2
-                  displayParts = passageParts;
+                  displayParts = passageParts.map(cleanPassageText);
                 } else {
                   // Multiple smaller parts - need to combine and split intelligently
                   // Split the full passage roughly in half, looking for a natural break
-                  const fullPassage = passage; // This already has all text joined
+                  const fullPassage = cleanPassageText(passage); // This already has all text joined
                   const midPoint = Math.floor(fullPassage.length / 2);
                   
                   // Look backwards from midpoint for a double newline (natural paragraph break)
@@ -470,12 +628,12 @@ function TakeQuiz() {
                     ];
                   } else {
                     // No good split point found - show as single passage with full text
-                    displayParts = [passage];
+                    displayParts = [cleanPassageText(passage)];
                   }
                 }
               } else {
                 // Single passage - show full text, no part labels
-                displayParts = [passage];
+                displayParts = [cleanPassageText(passage)];
               }
               
               // Compute titles for displayParts (may differ from passageParts if we split)
@@ -546,12 +704,24 @@ function TakeQuiz() {
                             border: '2px solid #007bff',
                             borderRadius: '8px',
                             textAlign: 'center',
-                            fontWeight: 'bold',
-                            color: '#0056b3',
-                            fontSize: '18px',
-                            fontStyle: 'italic'
+                            color: '#0056b3'
                           }}>
-                            {passageTitle}
+                            {passageTitle.split('\n').map((line, lineIdx) => {
+                              const isTitle = lineIdx === 0;
+                              const isAuthor = line.match(/^by\s+/i);
+                              const isPart = line.match(/\(Part\s+[12]\)/i);
+                              
+                              return (
+                                <div key={lineIdx} style={{
+                                  fontSize: isTitle ? '18px' : isAuthor ? '14px' : '16px',
+                                  fontWeight: isTitle ? 'bold' : 'normal',
+                                  fontStyle: isTitle ? 'italic' : 'normal',
+                                  marginBottom: lineIdx < passageTitle.split('\n').length - 1 ? '4px' : '0'
+                                }}>
+                                  {line}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       <div style={{ 
@@ -560,12 +730,31 @@ function TakeQuiz() {
                         textAlign: 'left'
                       }}>
                         {part.split('\n').map((line, idx) => {
-                          // Check if line is a paragraph number (just a number on its own line)
-                          // Paragraph numbers are NOT parts - they're just paragraph markers
-                          // CRITICAL: Trim whitespace before checking
-                          const trimmedLine = line.trim();
-                          const paragraphMatch = trimmedLine.match(/^(\d+)$/);
-                          if (paragraphMatch) {
+                          // Remove "Part 1" or "Part 2" from the passage text if it appears (redundant with title)
+                          let cleanedLine = line.replace(/^\s*Part\s+[12]\s*$/i, '').trim();
+                          
+                          // Check if line is a paragraph number (regular number or circled number)
+                          // Paragraph numbers can be: regular (2, 5, 6) or circled (②, ⑤, ⑥)
+                          const trimmedLine = cleanedLine.trim();
+                          
+                          // Map of circled numbers to regular numbers
+                          const circledToRegular = {
+                            '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5',
+                            '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9', '⑩': '10',
+                            '⑪': '11', '⑫': '12', '⑬': '13', '⑭': '14', '⑮': '15',
+                            '⑯': '16', '⑰': '17', '⑱': '18', '⑲': '19', '⑳': '20'
+                          };
+                          
+                          // Check for regular number
+                          let paragraphMatch = trimmedLine.match(/^(\d+)$/);
+                          let paragraphNum = paragraphMatch ? paragraphMatch[1] : null;
+                          
+                          // If not regular number, check for circled number
+                          if (!paragraphNum && trimmedLine.length === 1 && circledToRegular[trimmedLine]) {
+                            paragraphNum = circledToRegular[trimmedLine];
+                          }
+                          
+                          if (paragraphNum) {
                             return (
                               <div key={`${partIdx}-${idx}`} style={{
                                 fontWeight: 'bold',
@@ -582,15 +771,23 @@ function TakeQuiz() {
                                 minWidth: '40px',
                                 textAlign: 'center'
                               }}>
-                                {paragraphMatch[1]}
+                                {paragraphNum}
                               </div>
                             );
                           }
+                          
                           // Regular text line - skip empty lines (they're just spacing)
                           if (!trimmedLine) {
                             return <div key={`${partIdx}-${idx}`} style={{ marginBottom: '4px' }}>{'\u00A0'}</div>;
                           }
-                          return <div key={`${partIdx}-${idx}`} style={{ marginBottom: '8px' }}>{line}</div>;
+                          
+                          // Remove "Part 1" or "Part 2" from text lines as well
+                          cleanedLine = cleanedLine.replace(/^\s*Part\s+[12]\s*$/i, '').trim();
+                          if (!cleanedLine) {
+                            return <div key={`${partIdx}-${idx}`} style={{ marginBottom: '4px' }}>{'\u00A0'}</div>;
+                          }
+                          
+                          return <div key={`${partIdx}-${idx}`} style={{ marginBottom: '8px' }}>{cleanedLine}</div>;
                         })}
                       </div>
                       </div>

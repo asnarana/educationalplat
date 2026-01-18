@@ -241,6 +241,7 @@ function StudentHistory() {
             >
               <option value="">All Grades</option>
               <option value="3">Grade 3</option>
+              <option value="4">Grade 4</option>
               <option value="5">Grade 5</option>
             </select>
             <button
