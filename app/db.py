@@ -2,10 +2,14 @@
 Database setup and session management for GradeMaster.
 """
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool  # Oracle works better with NullPool
 from app.models import Base
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 # Oracle database URL
 # Format: oracle+oracledb://username:password@host:port/service_name
@@ -13,8 +17,11 @@ from app.models import Base
 ORACLE_USER = os.getenv("ORACLE_USER", "system")
 ORACLE_PASSWORD = os.getenv("ORACLE_PASSWORD", "Oracle123")
 ORACLE_HOST = os.getenv("ORACLE_HOST", "localhost")
-ORACLE_PORT = os.getenv("ORACLE_PORT", "1521")
+ORACLE_PORT = os.getenv("ORACLE_PORT", "1522")
 ORACLE_SERVICE = os.getenv("ORACLE_SERVICE", "FREEPDB1")
+
+# Debug: Print connection info
+print(f"Database connection: {ORACLE_HOST}:{ORACLE_PORT}/{ORACLE_SERVICE}")
 
 # Oracle connection string for PDB
 # Create DSN string with service_name explicitly specified (required for PDB connections)

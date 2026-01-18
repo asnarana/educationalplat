@@ -192,6 +192,15 @@ class ApiClient {
       body: { text, voice },
     });
   }
+
+  // Get available topics for a grade level and subject
+  async getTopics(gradeLevel, subject = null) {
+    let url = `/quiz/topics?grade_level=${gradeLevel}`;
+    if (subject) {
+      url += `&subject=${subject}`;
+    }
+    return this.request(url);
+  }
 }
 
 export default new ApiClient();

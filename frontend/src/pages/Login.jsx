@@ -8,6 +8,7 @@ function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [isRegister, setIsRegister] = useState(false);
 
   const handleLogin = async (e) => {
@@ -37,16 +38,17 @@ function Login() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       // Always register as student - admin accounts are created separately
       await api.register(username.trim(), password, 'student');
-      // After registration, automatically login
-      const response = await api.login(username.trim(), password);
-      const user = response.user;
       
-      // Students always go to home page
-      window.location.href = '/';
+      // Show success message and switch to login mode
+      setSuccess('Registration successful! Please login with your credentials.');
+      setIsRegister(false);
+      // Clear password but keep username for easy login
+      setPassword('');
     } catch (err) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -65,6 +67,7 @@ function Login() {
         </p>
 
         {error && <div className="error">{error}</div>}
+        {success && <div style={{ padding: '10px', marginBottom: '15px', backgroundColor: '#d4edda', color: '#155724', border: '1px solid #c3e6cb', borderRadius: '4px' }}>{success}</div>}
 
         <form onSubmit={isRegister ? handleRegister : handleLogin}>
           <div className="form-group">
@@ -110,6 +113,7 @@ function Login() {
             onClick={() => {
               setIsRegister(!isRegister);
               setError(null);
+              setSuccess(null);
             }}
             style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}
           >

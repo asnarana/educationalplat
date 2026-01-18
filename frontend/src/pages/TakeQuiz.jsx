@@ -242,6 +242,182 @@ function TakeQuiz() {
           const points = question.weight || 1.0;
           const isHighValue = points > 1.0;
           
+          // Parse reading passages from prompt
+          // The question is ALWAYS the last part after double newlines
+          const parseReadingPrompt = (prompt) => {
+            if (!prompt) return { passage: null, question: prompt, hasPassage: false };
+            
+            // Normalize line breaks
+            const normalizedPrompt = prompt.replace(/\r\n/g, '\n');
+            
+            // Check if it starts with "Read" - indicates a reading passage
+            if (!normalizedPrompt.startsWith('Read')) {
+              return {
+                passage: null,
+                question: prompt,
+                hasPassage: false
+              };
+            }
+            
+            // Remove the "Read..." prefix to get just the content
+            const contentMatch = normalizedPrompt.match(/^Read (?:the passage|both parts(?: of the story)?):\s*\n\n(.+)$/s);
+            if (!contentMatch) {
+              return {
+                passage: null,
+                question: prompt,
+                hasPassage: false
+              };
+            }
+            
+            const content = contentMatch[1];
+            
+            // Check if this is a "both parts" question
+            const isBothParts = normalizedPrompt.includes('Read both parts') || normalizedPrompt.includes('Use both parts');
+            
+            let question, passage, passageParts;
+            
+            if (isBothParts) {
+              // For "both parts" questions, the structure is:
+              // PART1\n\nPART2\n\nQUESTION
+              // We need to find where the question starts (it's usually short and at the end)
+              // Split by double newlines
+              const parts = content.split(/\n\n+/);
+              
+              if (parts.length < 3) {
+                // Not enough parts, treat last as question
+                question = parts[parts.length - 1].trim();
+                passageParts = parts.slice(0, -1);
+              } else {
+                // Find the question: it's the last part that's relatively short (< 300 chars)
+                // and doesn't look like part of a passage
+                let questionIdx = parts.length - 1;
+                for (let i = parts.length - 1; i >= 0; i--) {
+                  const part = parts[i].trim();
+                  // Question is typically short and doesn't start with paragraph numbers
+                  if (part.length < 300 && !part.match(/^\d+\s/)) {
+                    questionIdx = i;
+                    break;
+                  }
+                }
+                
+                question = parts[questionIdx].trim();
+                passageParts = parts.slice(0, questionIdx);
+              }
+              
+              // Join all passage parts back together to preserve full text
+              passage = passageParts.join('\n\n').trim();
+            } else {
+              // Single passage: split by double newlines, last part is question
+              const parts = content.split(/\n\n+/);
+              
+              if (parts.length < 2) {
+                return {
+                  passage: null,
+                  question: prompt,
+                  hasPassage: false
+                };
+              }
+              
+              question = parts[parts.length - 1].trim();
+              passageParts = parts.slice(0, -1);
+              passage = passageParts.join('\n\n').trim();
+            }
+            
+            // Validate: question should be relatively short (typically < 300 chars)
+            // and passage should be longer
+            if (question.length < 300 && passage.length > question.length) {
+              return {
+                passage: passage,
+                question: question,
+                hasPassage: true,
+                isBothParts: isBothParts,
+                passageParts: isBothParts && passageParts.length >= 2 ? passageParts : null
+              };
+            }
+            
+            // Fallback: if validation fails, still try to separate
+            return {
+              passage: passage,
+              question: question,
+              hasPassage: true,
+              isBothParts: isBothParts,
+              passageParts: isBothParts && passageParts.length >= 2 ? passageParts : null
+            };
+          };
+          
+          const { passage, question: questionText, hasPassage, isBothParts, passageParts } = parseReadingPrompt(question.prompt);
+          
+          // Extract passage titles/names based on content
+          const extractPassageTitle = (passageText, partIndex = 0) => {
+            if (!passageText) return null;
+            
+            // Detect passage by key phrases/content
+            // Part 2 may have different keywords, so we check for both parts
+            const passageDetectors = [
+              {
+                keywords: partIndex === 0 
+                  ? ['Rhode Island Red', 'rooster', 'poultry tent', 'county fairgrounds']
+                  : ['Rhode Island Red', 'boy', 'oats', 'midway', 'cages'],
+                title: 'The Great Escape',
+                part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
+              },
+              {
+                keywords: partIndex === 0
+                  ? ['Lois Ehlert', 'Growing Vegetable Soup', 'handmade books', 'Milwaukee', 'circus parade']
+                  : ['dummy book', 'thumbnail sketches', 'typewriter', 'sunroom', 'collage', 'Milwaukee'],
+                title: 'Excerpt from Under My Nose',
+                part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
+              },
+              {
+                keywords: partIndex === 0
+                  ? ['Grandfather Frog', 'Billy Mink', 'Little Joe Otter', 'Smiling Pool']
+                  : ['Grandfather Frog', 'Jerry', 'pounded the water', 'Little Joe Otter', 'Longlegs'],
+                title: 'Adapted from The Adventures of Grandfather Frog: "Billy Mink Finds Little Joe Otter"',
+                part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
+              },
+              {
+                keywords: partIndex === 0
+                  ? ['beaver', 'dam', 'sticks and logs', 'foundation']
+                  : ['beaver', 'village', 'winter homes', 'Frenchman', 'Louisiana', 'hole'],
+                title: 'Adapted from "Beavers at Home"',
+                part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
+              },
+              {
+                keywords: partIndex === 0
+                  ? ['Velvet', 'Mount Hood', 'climbers', 'German shepherd', 'transmitter']
+                  : ['Velvet', 'rescue team', 'White River Canyon', 'forest ranger station', 'extra treats'],
+                title: 'Excerpt from "Dog a Hero on Mount Hood"',
+                part: partIndex === 0 ? '(Part 1)' : '(Part 2)'
+              }
+            ];
+            
+            // Check passage content for keywords
+            const passageLower = passageText.toLowerCase();
+            for (const detector of passageDetectors) {
+              const matchCount = detector.keywords.filter(keyword => 
+                passageLower.includes(keyword.toLowerCase())
+              ).length;
+              
+              // If at least 2 keywords match (or 1 for Part 2 if we're being lenient), it's likely this passage
+              const threshold = partIndex === 1 ? 1 : 2; // More lenient for Part 2
+              if (matchCount >= threshold) {
+                return `${detector.title} ${detector.part}`;
+              }
+            }
+            
+            return null;
+          };
+          
+          // Get titles for each part
+          const passageTitles = passageParts && passageParts.length > 0 
+            ? passageParts.map((part, idx) => extractPassageTitle(part, idx))
+            : passage ? [extractPassageTitle(passage, 0)] : [null];
+          
+          // Debug: log if passage was detected
+          if (hasPassage) {
+            console.log('Found passage for question', index + 1, 'Passage length:', passage?.length, 'Both parts:', isBothParts, 'Titles:', passageTitles);
+          }
+          
           return (
           <div key={`${question.id}-${index}`} className="question-card">
             <div className="question-header">
@@ -258,28 +434,230 @@ function TakeQuiz() {
                 ⭐ {points} {points === 1 ? 'point' : 'points'}
               </span>
             </div>
+            
+            {hasPassage && passage && (() => {
+              // Always show the FULL passage text
+              // The `passage` variable already contains the complete text
+              // For "both parts" questions, try to split into Part 1 and Part 2 for visual separation
+              let displayParts = [];
+              
+              if (isBothParts && passageParts && passageParts.length >= 2) {
+                // For "both parts", we need to split the full passage into Part 1 and Part 2
+                // The passageParts array contains all paragraphs separated by double newlines
+                // We need to find where Part 1 ends and Part 2 begins
+                // Strategy: if we have exactly 2 large parts, use them; otherwise split by content length
+                
+                if (passageParts.length === 2 && 
+                    passageParts[0].length > 200 && 
+                    passageParts[1].length > 200) {
+                  // Likely already split correctly into Part 1 and Part 2
+                  displayParts = passageParts;
+                } else {
+                  // Multiple smaller parts - need to combine and split intelligently
+                  // Split the full passage roughly in half, looking for a natural break
+                  const fullPassage = passage; // This already has all text joined
+                  const midPoint = Math.floor(fullPassage.length / 2);
+                  
+                  // Look backwards from midpoint for a double newline (natural paragraph break)
+                  const beforeMid = fullPassage.substring(0, midPoint);
+                  const splitPoint = beforeMid.lastIndexOf('\n\n');
+                  
+                  if (splitPoint > midPoint * 0.4) {
+                    // Found a reasonable split point
+                    displayParts = [
+                      fullPassage.substring(0, splitPoint).trim(),
+                      fullPassage.substring(splitPoint).trim()
+                    ];
+                  } else {
+                    // No good split point found - show as single passage with full text
+                    displayParts = [passage];
+                  }
+                }
+              } else {
+                // Single passage - show full text, no part labels
+                displayParts = [passage];
+              }
+              
+              // Compute titles for displayParts (may differ from passageParts if we split)
+              // CRITICAL: For "both parts", if Part 1 is detected, use same title for Part 2
+              let displayTitles = displayParts.map((part, idx) => extractPassageTitle(part, idx));
+              
+              if (isBothParts && displayParts.length >= 2) {
+                // If Part 1 has a title but Part 2 doesn't, extract the title from Part 1 and apply to Part 2
+                const part1Title = displayTitles[0];
+                if (part1Title && !displayTitles[1]) {
+                  // Extract the base title (without Part number) and add Part 2
+                  const baseTitleMatch = part1Title.match(/^(.+?)\s*\(Part\s+1\)$/i);
+                  if (baseTitleMatch) {
+                    displayTitles[1] = `${baseTitleMatch[1]} (Part 2)`;
+                  } else {
+                    // If no Part 1 in title, try to detect Part 2 separately
+                    displayTitles[1] = extractPassageTitle(displayParts[1], 1);
+                    // If still no title, use same as Part 1 but change to Part 2
+                    if (!displayTitles[1] && part1Title) {
+                      displayTitles[1] = part1Title.replace(/\(Part\s+1\)/i, '(Part 2)');
+                    }
+                  }
+                }
+                // If Part 2 has a title but Part 1 doesn't, do the reverse
+                const part2Title = displayTitles[1];
+                if (part2Title && !displayTitles[0]) {
+                  const baseTitleMatch = part2Title.match(/^(.+?)\s*\(Part\s+2\)$/i);
+                  if (baseTitleMatch) {
+                    displayTitles[0] = `${baseTitleMatch[1]} (Part 1)`;
+                  }
+                }
+              }
+              
+              return (
+                <div style={{
+                  backgroundColor: '#f8f9fa',
+                  border: '2px solid #007bff',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  marginBottom: '25px',
+                  maxHeight: '500px',
+                  overflowY: 'auto',
+                  lineHeight: '1.8',
+                  fontSize: '15px',
+                  color: '#212529'
+                }}>
+                  <div style={{
+                    fontWeight: 'bold',
+                    marginBottom: '12px',
+                    color: '#007bff',
+                    fontSize: '14px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📖 Reading Passage{isBothParts ? ' (Part 1 & Part 2)' : ''}
+                  </div>
+                  {displayParts.map((part, partIdx) => {
+                    const passageTitle = displayTitles[partIdx] || null;
+                    return (
+                      <div key={partIdx}>
+                        {/* Show passage title if available */}
+                        {passageTitle && (
+                          <div style={{
+                            marginBottom: partIdx > 0 ? '20px' : '15px',
+                            marginTop: partIdx > 0 ? '20px' : '0',
+                            padding: '12px 20px',
+                            backgroundColor: '#e7f3ff',
+                            border: '2px solid #007bff',
+                            borderRadius: '8px',
+                            textAlign: 'center',
+                            fontWeight: 'bold',
+                            color: '#0056b3',
+                            fontSize: '18px',
+                            fontStyle: 'italic'
+                          }}>
+                            {passageTitle}
+                          </div>
+                        )}
+                      <div style={{ 
+                        whiteSpace: 'pre-wrap',
+                        fontFamily: 'Georgia, serif',
+                        textAlign: 'left'
+                      }}>
+                        {part.split('\n').map((line, idx) => {
+                          // Check if line is a paragraph number (just a number on its own line)
+                          // Paragraph numbers are NOT parts - they're just paragraph markers
+                          // CRITICAL: Trim whitespace before checking
+                          const trimmedLine = line.trim();
+                          const paragraphMatch = trimmedLine.match(/^(\d+)$/);
+                          if (paragraphMatch) {
+                            return (
+                              <div key={`${partIdx}-${idx}`} style={{
+                                fontWeight: 'bold',
+                                fontSize: '18px',
+                                color: '#007bff',
+                                marginTop: idx > 0 ? '20px' : '0',
+                                marginBottom: '8px',
+                                paddingLeft: '5px',
+                                borderLeft: '4px solid #007bff',
+                                backgroundColor: '#e7f3ff',
+                                padding: '5px 10px',
+                                borderRadius: '4px',
+                                display: 'inline-block',
+                                minWidth: '40px',
+                                textAlign: 'center'
+                              }}>
+                                {paragraphMatch[1]}
+                              </div>
+                            );
+                          }
+                          // Regular text line - skip empty lines (they're just spacing)
+                          if (!trimmedLine) {
+                            return <div key={`${partIdx}-${idx}`} style={{ marginBottom: '4px' }}>{'\u00A0'}</div>;
+                          }
+                          return <div key={`${partIdx}-${idx}`} style={{ marginBottom: '8px' }}>{line}</div>;
+                        })}
+                      </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            
+            {/* Question Section - Clearly Separated */}
             <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '10px', 
-              marginBottom: '10px' 
+              marginBottom: '20px',
+              marginTop: hasPassage ? '30px' : '10px',
+              paddingTop: hasPassage ? '25px' : '0',
+              borderTop: hasPassage ? '4px solid #28a745' : 'none',
+              backgroundColor: hasPassage ? '#f0f8f0' : 'transparent',
+              padding: hasPassage ? '20px' : '0',
+              borderRadius: hasPassage ? '8px' : '0'
             }}>
-              <div className="question-prompt" style={{ flex: 1 }}>{question.prompt}</div>
-              <button
-                onClick={() => handlePlayQuestion(question.prompt, question.id)}
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: playingAudioId === question.id ? '#dc3545' : '#007bff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px'
-                }}
-                title="Listen to question"
-              >
-                {playingAudioId === question.id ? '⏸️ Stop' : '🔊 Listen'}
-              </button>
+              {hasPassage && (
+                <div style={{
+                  fontWeight: 'bold',
+                  marginBottom: '15px',
+                  color: '#28a745',
+                  fontSize: '15px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
+                }}>
+                  ❓ Question
+                </div>
+              )}
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'flex-start', 
+                gap: '10px'
+              }}>
+                <div className="question-prompt" style={{ 
+                  flex: 1,
+                  fontSize: hasPassage ? '18px' : '16px',
+                  fontWeight: '600',
+                  lineHeight: '1.7',
+                  color: '#212529',
+                  backgroundColor: hasPassage ? '#ffffff' : 'transparent',
+                  padding: hasPassage ? '18px' : '0',
+                  borderRadius: hasPassage ? '8px' : '0',
+                  border: hasPassage ? '2px solid #28a745' : 'none',
+                  boxShadow: hasPassage ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
+                }}>
+                  {hasPassage ? questionText : question.prompt}
+                </div>
+                <button
+                  onClick={() => handlePlayQuestion(question.prompt, question.id)}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: playingAudioId === question.id ? '#dc3545' : '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    flexShrink: 0
+                  }}
+                  title="Listen to question"
+                >
+                  {playingAudioId === question.id ? '⏸️ Stop' : '🔊 Listen'}
+                </button>
+              </div>
             </div>
             {question.choices && question.choices.length > 0 ? (
               <ul className="choices">

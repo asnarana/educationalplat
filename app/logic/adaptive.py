@@ -3,6 +3,7 @@ Adaptive quiz generation logic.
 Selects questions based on weak topics and avoids recent repeats.
 """
 import random
+import time
 from typing import List, Set, Dict
 from sqlalchemy.orm import Session
 from app.models import Question, Quiz, Attempt
@@ -62,7 +63,8 @@ def select_questions_for_quiz(
     topics: List[str],
     num_questions: int,
     weak_topics: List[str] = None,
-    exclude_question_ids: Set[int] = None
+    exclude_question_ids: Set[int] = None,
+    exclude_prompt_keywords: List[str] = None
 ) -> List[Question]:
     """
     Select questions for a quiz based on adaptive rules.
@@ -71,6 +73,8 @@ def select_questions_for_quiz(
     - If weak_topics provided: 70% from weak_topics, 30% from remaining topics
     - Ensure topic coverage
     - Avoid questions in exclude_question_ids
+    - CRITICAL: No duplicate questions within the same quiz
+    - CRITICAL: Questions are randomized for each call
     
     Args:
         db: Database session
@@ -81,13 +85,28 @@ def select_questions_for_quiz(
         exclude_question_ids: Set of question IDs to exclude
         
     Returns:
-        List of selected Question objects
+        List of selected Question objects (no duplicates, randomized order)
     """
+    # CRITICAL: Seed random number generator with current time to ensure different questions each time
+    random.seed(int(time.time() * 1000))
+    
     if exclude_question_ids is None:
         exclude_question_ids = set()
     
     if weak_topics is None:
         weak_topics = []
+    
+    if exclude_prompt_keywords is None:
+        exclude_prompt_keywords = []
+    
+    # Helper function to filter questions by keywords
+    def filter_by_keywords(questions):
+        if not exclude_prompt_keywords:
+            return questions
+        return [
+            q for q in questions 
+            if not any(keyword.lower() in q.prompt.lower() for keyword in exclude_prompt_keywords)
+        ]
     
     # Special case: If ALL topics are weak, distribute evenly across all topics
     # This prevents uneven distribution when student struggles with everything
@@ -114,8 +133,10 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Filter out already selected and randomize
-            available = [q for q in topic_questions if q.id not in selected_ids]
+            # Filter out already selected, exclude keywords, and randomize
+            available = filter_by_keywords([
+                q for q in topic_questions if q.id not in selected_ids
+            ])
             random.shuffle(available)  # Randomize to ensure different questions each time
             
             for q in available[:needed]:
@@ -135,8 +156,10 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Randomize before selecting
-            available_list = [q for q in all_available if q.id not in selected_ids]
+            # Randomize before selecting (exclude keywords)
+            available_list = filter_by_keywords([
+                q for q in all_available if q.id not in selected_ids
+            ])
             random.shuffle(available_list)
             
             for q in available_list:
@@ -155,17 +178,28 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Randomize before selecting
-            random.shuffle(all_questions)
+            # Randomize before selecting (exclude keywords)
+            all_questions_filtered = filter_by_keywords(all_questions)
+            random.shuffle(all_questions_filtered)
             
-            for q in all_questions:
+            for q in all_questions_filtered:
                 if q.id not in selected_ids and len(selected_questions) < num_questions:
                     selected_questions.append(q)
                     selected_ids.add(q.id)
         
-        # Final shuffle to randomize order of selected questions
+        # CRITICAL: Final shuffle to randomize order of selected questions
+        # This ensures questions appear in different order each time
         random.shuffle(selected_questions)
-        return selected_questions[:num_questions]
+        
+        # Final check: Ensure no duplicates (shouldn't happen, but double-check)
+        seen_ids = set()
+        unique_questions = []
+        for q in selected_questions:
+            if q.id not in seen_ids:
+                unique_questions.append(q)
+                seen_ids.add(q.id)
+        
+        return unique_questions[:num_questions]
     
     # Normal case: Some topics are weak, some are not - use 70/30 split
     # OR: No weak topics - distribute evenly across all topics
@@ -199,12 +233,17 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Filter out already selected and randomize
-            available = [q for q in topic_questions if q.id not in selected_ids]
-            random.shuffle(available)  # Randomize to ensure different questions each time
+            # Filter out already selected, exclude keywords, and randomize
+            available = filter_by_keywords([
+                q for q in topic_questions if q.id not in selected_ids
+            ])
+            # CRITICAL: Randomize BEFORE selecting to ensure different questions each time
+            random.shuffle(available)
+            # Ensure no duplicates within the same topic
+            available = [q for q in available if q.id not in selected_ids]
             
             for q in available[:needed]:
-                if len(selected_questions) < num_questions:
+                if len(selected_questions) < num_questions and q.id not in selected_ids:
                     selected_questions.append(q)
                     selected_ids.add(q.id)
         
@@ -231,10 +270,14 @@ def select_questions_for_quiz(
                 
                 if topic_questions:
                     # Prefer not already selected, but allow repeat if needed
-                    available = [q for q in topic_questions if q.id not in selected_ids]
+                    # Filter by keywords first
+                    available = filter_by_keywords([
+                        q for q in topic_questions if q.id not in selected_ids
+                    ])
                     random.shuffle(available)  # Randomize
                     if not available:
-                        available = topic_questions  # Allow repeat to ensure topic is represented
+                        # Allow repeat to ensure topic is represented, but still exclude keywords
+                        available = filter_by_keywords(topic_questions)
                         random.shuffle(available)  # Randomize even repeats
                     
                     if available:
@@ -253,8 +296,13 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            for q in all_available:
-                if q.id not in selected_ids and len(selected_questions) < num_questions:
+            # Filter by keywords
+            all_available_filtered = filter_by_keywords([
+                q for q in all_available if q.id not in selected_ids
+            ])
+            
+            for q in all_available_filtered:
+                if len(selected_questions) < num_questions:
                     selected_questions.append(q)
                     selected_ids.add(q.id)
         
@@ -287,10 +335,10 @@ def select_questions_for_quiz(
             )
         )
         
-        available_weak = [
+        available_weak = filter_by_keywords([
             q for q in weak_query.all()
             if q.id not in selected_ids
-        ]
+        ])
         random.shuffle(available_weak)  # Randomize to ensure different questions each time
         
         # Prioritize weak topics: try to get all num_weak questions from weak topics
@@ -351,10 +399,10 @@ def select_questions_for_quiz(
             )
         )
         
-        available_review = [
+        available_review = filter_by_keywords([
             q for q in review_query.all()
             if q.id not in selected_ids
-        ]
+        ])
         random.shuffle(available_review)  # Randomize to ensure different questions each time
         
         # Distribute across review topics
@@ -448,10 +496,10 @@ def select_questions_for_quiz(
                     ~Question.id.in_(exclude_question_ids)
                 )
             )
-            available_review = [
+            available_review = filter_by_keywords([
                 q for q in review_query.all()
                 if q.id not in selected_ids
-            ]
+            ])
             random.shuffle(available_review)  # Randomize
             for q in available_review:
                 if len(selected_questions) < num_questions:
@@ -470,9 +518,13 @@ def select_questions_for_quiz(
                 .all()
             )
             
-            # Prioritize weak topics even in this fallback
-            weak_questions = [q for q in all_available if q.topic in weak_topics and q.id not in selected_ids]
-            other_questions = [q for q in all_available if q.topic not in weak_topics and q.id not in selected_ids]
+            # Prioritize weak topics even in this fallback (filter by keywords)
+            weak_questions = filter_by_keywords([
+                q for q in all_available if q.topic in weak_topics and q.id not in selected_ids
+            ])
+            other_questions = filter_by_keywords([
+                q for q in all_available if q.topic not in weak_topics and q.id not in selected_ids
+            ])
             
             # Randomize both lists
             random.shuffle(weak_questions)
@@ -503,10 +555,10 @@ def select_questions_for_quiz(
                     Question.topic.in_(weak_topics)
                 )
             )
-            available_weak_no_exclusions = [
+            available_weak_no_exclusions = filter_by_keywords([
                 q for q in weak_query_no_exclusions.all()
                 if q.id not in selected_ids
-            ]
+            ])
             random.shuffle(available_weak_no_exclusions)  # Randomize
             for q in available_weak_no_exclusions:
                 if len(selected_questions) < num_weak:
@@ -533,9 +585,19 @@ def select_questions_for_quiz(
                     selected_questions.append(q)
                     selected_ids.add(q.id)
     
-    # Final shuffle to randomize order of selected questions
+    # CRITICAL: Final shuffle to randomize order of selected questions
+    # This ensures questions appear in different order each time
     random.shuffle(selected_questions)
-    return selected_questions[:num_questions]
+    
+    # Final check: Ensure no duplicates (shouldn't happen, but double-check)
+    seen_ids = set()
+    unique_questions = []
+    for q in selected_questions:
+        if q.id not in seen_ids:
+            unique_questions.append(q)
+            seen_ids.add(q.id)
+    
+    return unique_questions[:num_questions]
 
 
 def check_mastery_status(

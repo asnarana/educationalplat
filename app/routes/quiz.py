@@ -2,8 +2,9 @@
 Routes for quiz generation and submission.
 """
 import random
+import time
 from typing import List, Dict, Optional, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.db import get_db
@@ -18,6 +19,44 @@ from app.cache import invalidate_student_cache
 from typing import Optional
 
 router = APIRouter(prefix="/quiz", tags=["quiz"])
+
+
+@router.get("/topics")
+def get_topics(
+    grade_level: int = Query(..., description="Grade level (3, 4, or 5)"),
+    subject: Optional[str] = Query(None, description="Subject filter: 'Math' or 'Reading'"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get available topics for a given grade level and subject.
+    If subject is not provided, returns all topics for the grade level.
+    """
+    query = db.query(Question.topic).filter(
+        Question.grade_level == grade_level
+    ).distinct()
+    
+    topics = [row[0] for row in query.all()]
+    
+    # Filter by subject if provided
+    if subject:
+        # Determine subject based on topic names
+        # Math topics: Addition, Subtraction, Multiplication, Division, Fractions, Algebra, Geometry, etc.
+        # Reading topics: Vocabulary, Reading Comprehension, Character Analysis, Main Idea, etc.
+        math_keywords = ['addition', 'subtraction', 'multiplication', 'division', 'fraction', 
+                        'algebra', 'geometry', 'decimal', 'percentage', 'word problem']
+        reading_keywords = ['vocabulary', 'reading', 'comprehension', 'character', 'main idea', 
+                           'text structure', 'inference', 'word meaning']
+        
+        if subject.lower() == 'math':
+            topics = [t for t in topics if any(keyword in t.lower() for keyword in math_keywords)]
+        elif subject.lower() == 'reading':
+            topics = [t for t in topics if any(keyword in t.lower() for keyword in reading_keywords)]
+    
+    return {
+        "grade_level": grade_level,
+        "subject": subject,
+        "topics": sorted(topics)
+    }
 
 
 # Request/Response models
@@ -101,15 +140,20 @@ def generate_quiz(
         if most_recent_quiz and most_recent_quiz.question_ids:
             recent_question_ids.update(most_recent_quiz.question_ids)
         
+        # CRITICAL: Seed random number generator with current time to ensure different questions each time
+        random.seed(int(time.time() * 1000))
+        
         # Select questions using balanced distribution (no weak topic focus for full tests)
         # Pass weak_topics=None to get even distribution across all topics
+        # Exclude octopus sample question
         selected_questions = select_questions_for_quiz(
             db=db,
             grade_level=request.grade_level,
             topics=request.topics,
             num_questions=request.num_questions,
             weak_topics=None,  # No adaptive focus - balanced quiz for comprehensive assessment
-            exclude_question_ids=recent_question_ids
+            exclude_question_ids=recent_question_ids,
+            exclude_prompt_keywords=['octopus']  # Exclude octopus sample question
         )
         
         # If we don't have enough questions, try with less restrictive exclusions
@@ -124,7 +168,8 @@ def generate_quiz(
                 topics=request.topics,
                 num_questions=request.num_questions,
                 weak_topics=None,  # Balanced distribution for full tests
-                exclude_question_ids=recent_question_ids
+                exclude_question_ids=recent_question_ids,
+                exclude_prompt_keywords=['octopus']
             )
         
         # If still not enough, try excluding only the most recent quiz
@@ -138,7 +183,8 @@ def generate_quiz(
                 topics=request.topics,
                 num_questions=request.num_questions,
                 weak_topics=None,  # Balanced distribution for full tests
-                exclude_question_ids=recent_question_ids
+                exclude_question_ids=recent_question_ids,
+                exclude_prompt_keywords=['octopus']
             )
         
         # If still not enough, allow repeats (no exclusions) - but this should be rare with expanded bank
@@ -149,7 +195,8 @@ def generate_quiz(
                 topics=request.topics,
                 num_questions=request.num_questions,
                 weak_topics=None,  # Balanced distribution for full tests
-                exclude_question_ids=set()  # No exclusions - allow repeats
+                exclude_question_ids=set(),  # No exclusions - allow repeats
+                exclude_prompt_keywords=['octopus']  # Still exclude octopus
             )
         
         # If still not enough, use what we have (shouldn't happen with expanded bank)
@@ -245,9 +292,20 @@ def regenerate_quiz_questions(
             if quiz.question_ids:
                 recent_question_ids.update(quiz.question_ids)
             
-            # Separate available and recently used questions
-            available_questions = [q for q in all_topic_questions if q.id not in recent_question_ids]
-            recently_used_questions = [q for q in all_topic_questions if q.id in recent_question_ids]
+            # Separate available and recently used questions (exclude octopus sample question)
+            available_questions = [
+                q for q in all_topic_questions 
+                if q.id not in recent_question_ids 
+                and 'octopus' not in q.prompt.lower()
+            ]
+            recently_used_questions = [
+                q for q in all_topic_questions 
+                if q.id in recent_question_ids 
+                and 'octopus' not in q.prompt.lower()
+            ]
+            
+            # CRITICAL: Seed random number generator with current time to ensure different questions each retake
+            random.seed(int(time.time() * 1000))
             
             # Shuffle for variety
             random.shuffle(available_questions)
@@ -275,19 +333,24 @@ def regenerate_quiz_questions(
                         selected_questions.append(q)
                         selected_ids.add(q.id)
             
-            # Final fallback: use any questions
+            # Final fallback: use any questions (but still exclude octopus and current quiz)
             if len(selected_questions) < num_needed:
-                remaining = [q for q in all_topic_questions if q.id not in selected_ids]
+                remaining = [
+                    q for q in all_topic_questions 
+                    if q.id not in selected_ids 
+                    and q.id not in (quiz.question_ids or [])
+                    and 'octopus' not in q.prompt.lower()
+                ]
                 random.shuffle(remaining)
                 for q in remaining[:num_needed - len(selected_questions)]:
                     selected_questions.append(q)
         else:
-            # Full quiz: regenerate with balanced distribution across all topics
-            topics = {
-                3: ['Addition', 'Subtraction', 'Multiplication', 'Division', 'Fractions'],
-                5: ['Algebra', 'Geometry', 'Decimals', 'Percentages', 'Word Problems'],
-            }
-            grade_topics = topics.get(quiz.grade_level, [])
+            # Full quiz: regenerate with balanced distribution across the SAME topics as original quiz
+            # Use topics from existing questions to preserve subject (Math vs Reading)
+            if not existing_topics:
+                raise HTTPException(status_code=400, detail="Cannot determine quiz topics from existing questions")
+            
+            grade_topics = list(existing_topics)
             
             # Get recent question IDs to avoid repeats
             recent_question_ids = get_recent_question_ids(db, quiz.student_id, quiz.grade_level, num_quizzes=3)
@@ -298,29 +361,37 @@ def regenerate_quiz_questions(
             
             num_needed = len(quiz.question_ids) if quiz.question_ids else 10
             
-            # Select new questions using balanced distribution
+            # CRITICAL: Always exclude current quiz's questions to ensure different questions on retake
+            current_quiz_question_ids = set(quiz.question_ids) if quiz.question_ids else set()
+            
+            # CRITICAL: Seed random number generator with current time to ensure different questions each retake
+            random.seed(int(time.time() * 1000))
+            
+            # Select new questions using balanced distribution across the SAME topics
+            # Always exclude current quiz questions AND octopus sample question
             selected_questions = select_questions_for_quiz(
                 db=db,
                 grade_level=quiz.grade_level,
                 topics=grade_topics,
                 num_questions=num_needed,
                 weak_topics=None,  # Balanced distribution for full tests
-                exclude_question_ids=recent_question_ids
+                exclude_question_ids=recent_question_ids | current_quiz_question_ids,
+                exclude_prompt_keywords=['octopus']  # Exclude octopus sample question
             )
             
-            # If we don't have enough questions, try with less restrictive exclusions
+            # If we don't have enough questions, try with less restrictive exclusions (but still exclude current quiz)
             if len(selected_questions) < num_needed:
-                recent_question_ids = set(quiz.question_ids) if quiz.question_ids else set()
                 selected_questions = select_questions_for_quiz(
                     db=db,
                     grade_level=quiz.grade_level,
                     topics=grade_topics,
                     num_questions=num_needed,
                     weak_topics=None,
-                    exclude_question_ids=recent_question_ids
+                    exclude_question_ids=current_quiz_question_ids,  # Still exclude current quiz
+                    exclude_prompt_keywords=['octopus']
                 )
             
-            # If still not enough, allow repeats (shouldn't happen with expanded bank)
+            # If still not enough, allow repeats from other quizzes but NEVER from current quiz
             if len(selected_questions) < num_needed:
                 selected_questions = select_questions_for_quiz(
                     db=db,
@@ -328,7 +399,8 @@ def regenerate_quiz_questions(
                     topics=grade_topics,
                     num_questions=num_needed,
                     weak_topics=None,
-                    exclude_question_ids=set()
+                    exclude_question_ids=current_quiz_question_ids,  # ALWAYS exclude current quiz
+                    exclude_prompt_keywords=['octopus']
                 )
         
         # Update the quiz with new questions
@@ -376,10 +448,14 @@ def generate_topic_practice_quiz(
     
     # For practice quizzes, get all questions for this topic ONLY
     # This ensures practice quizzes always have questions from a single topic
-    all_topic_questions = db.query(Question).filter(
-        Question.grade_level == request.grade_level,
-        Question.topic == request.topic
-    ).all()
+    # Exclude octopus sample question
+    all_topic_questions = [
+        q for q in db.query(Question).filter(
+            Question.grade_level == request.grade_level,
+            Question.topic == request.topic
+        ).all()
+        if 'octopus' not in q.prompt.lower()
+    ]
     
     # Verify we're only getting questions from the requested topic
     # This is a safeguard to ensure practice quizzes are always single-topic
