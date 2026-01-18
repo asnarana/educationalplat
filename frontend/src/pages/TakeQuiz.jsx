@@ -642,7 +642,7 @@ function TakeQuiz() {
                   {hasPassage ? questionText : question.prompt}
                 </div>
                 <button
-                  onClick={() => handlePlayQuestion(question.prompt, question.id)}
+                  onClick={() => handlePlayQuestion(hasPassage ? questionText : question.prompt, question.id)}
                   style={{
                     padding: '8px 12px',
                     backgroundColor: playingAudioId === question.id ? '#dc3545' : '#007bff',
