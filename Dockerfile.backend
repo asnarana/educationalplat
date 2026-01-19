@@ -1,0 +1,51 @@
+# Backend Dockerfile for FastAPI application
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for Oracle Instant Client
+RUN apt-get update && apt-get install -y \
+    libaio1 \
+    wget \
+    unzip \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Oracle Instant Client
+# Note: Oracle Instant Client requires accepting license terms
+# If download fails, you may need to download manually and copy to image
+RUN mkdir -p /opt/oracle && \
+    cd /opt/oracle && \
+    (wget --no-check-certificate -q --header="Cookie: oraclelicense=accept-securebackup-cookie" \
+    https://download.oracle.com/otn_software/linux/instantclient/instantclient-basiclite-linux.x64-21.1.0.0.0.zip -O instantclient.zip && \
+    unzip -q instantclient.zip && \
+    rm -f instantclient.zip && \
+    cd instantclient_21_1 && \
+    rm -f *jdbc* *occi* *mysql* *README *jar uidrvci genezi adrci && \
+    echo /opt/oracle/instantclient_21_1 > /etc/ld.so.conf.d/oracle-instantclient.conf && \
+    ldconfig) || echo "Warning: Oracle Instant Client installation failed. Database connection may not work."
+
+# Set Oracle environment variables
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_21_1:$LD_LIBRARY_PATH
+ENV ORACLE_HOME=/opt/oracle/instantclient_21_1
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY app/ ./app/
+COPY *.py ./
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
