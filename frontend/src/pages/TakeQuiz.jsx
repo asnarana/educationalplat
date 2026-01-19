@@ -351,18 +351,33 @@ function TakeQuiz() {
           const extractTitleAndAuthor = (passageText) => {
             if (!passageText) return { title: null, author: null };
             
-            const lines = passageText.split('\n').map(l => l.trim()).filter(l => l);
+            // Filter out empty lines and "Part X" lines, but keep order
+            const allLines = passageText.split('\n');
+            const lines = [];
+            for (const line of allLines) {
+              const trimmed = line.trim();
+              // Skip empty lines and "Part X" standalone lines
+              if (trimmed && !trimmed.match(/^Part\s+[12]$/i)) {
+                lines.push(trimmed);
+              }
+            }
             
             // Look for title on first line and "by Author" on second line
             let title = null;
             let author = null;
             
             if (lines.length > 0) {
-              // Check if first line looks like a title (not a paragraph number, not "Part 1/2")
+              // Check if first line looks like a title (not a paragraph number, not starting with lowercase)
               const firstLine = lines[0];
-              if (!firstLine.match(/^\d+$/) && 
-                  !firstLine.match(/^Part\s+[12]$/i) &&
-                  firstLine.length > 3 && firstLine.length < 100) {
+              // Title should:
+              // - Not be just a number (paragraph number)
+              // - Have reasonable length (3-150 chars)
+              // - Usually start with capital letter or known title patterns
+              if (!firstLine.match(/^\d+$/) &&
+                  firstLine.length >= 3 && firstLine.length <= 150 &&
+                  (firstLine.match(/^[A-Z]/) || // Starts with capital
+                   firstLine.match(/^(Excerpt|Adapted|Making|The|Antonio|Annabel|Libby|Amelia|What's|Dinos|Dinosaur)/i) ||
+                   firstLine.length < 50)) { // Short lines are likely titles
                 title = firstLine;
                 
                 // Check second line for "by Author" pattern
@@ -393,6 +408,18 @@ function TakeQuiz() {
           const extractPassageTitle = (passageText, partIndex = 0) => {
             if (!passageText) return null;
             
+            // Detect which part this is by checking for "Part 1" or "Part 2" markers in the text
+            const passageLower = passageText.toLowerCase();
+            let detectedPartIndex = partIndex; // Default to passed partIndex
+            
+            // Check if text contains "Part 2" marker (more reliable than partIndex)
+            if (passageLower.includes('part 2') && !passageLower.includes('part 1')) {
+              detectedPartIndex = 1; // This is Part 2
+            } else if (passageLower.includes('part 1') && !passageLower.includes('part 2')) {
+              detectedPartIndex = 0; // This is Part 1
+            }
+            // If both are present or neither, use the passed partIndex
+            
             // First try to extract title and author directly from text
             const { title, author } = extractTitleAndAuthor(passageText);
             if (title) {
@@ -409,15 +436,18 @@ function TakeQuiz() {
                 { keywords: ['Velvet', 'Mount Hood'], hasParts: true }
               ];
               
-              const passageLower = passageText.toLowerCase();
               const hasParts = passageDetectors.some(d => 
                 d.keywords.some(k => passageLower.includes(k.toLowerCase()))
               );
               
-              if (hasParts && partIndex >= 0) {
-                displayTitle += `\n(Part ${partIndex === 0 ? '1' : '2'})`;
+              if (hasParts && detectedPartIndex >= 0) {
+                // Only add Part label if not already present
+                if (!displayTitle.match(/\(Part\s+[12]\)/i)) {
+                  displayTitle += `\n(Part ${detectedPartIndex === 0 ? '1' : '2'})`;
+                }
               }
               
+              // Always return the title if we found one (even without author)
               return displayTitle;
             }
             
@@ -487,11 +517,47 @@ function TakeQuiz() {
                 title: 'Adapted from "A Regular Railroad Dog"',
                 author: 'Avis J. Kirsch',
                 part: ''
+              },
+              {
+                keywords: ['Dinosaur Cove', 'paleontologists', 'South Pole', 'Antarctica', 'cold-blooded', 'warm-blooded', 'big eyes'],
+                title: 'Dinos in the Dark',
+                author: 'Stephen Whitt',
+                part: ''
+              },
+              // Grade 5 Reading Passages
+              {
+                keywords: ['weightless', 'astronauts', 'gravity', 'space', 'zero gravity', 'weightlessness'],
+                title: 'Excerpt from "Life without Gravity"',
+                author: 'Robert Zimmerman',
+                part: ''
+              },
+              {
+                keywords: ['saguaro', 'Tohono O\'odham', 'Gina', 'kuipad', 'creosote', 'syrup', 'harvest'],
+                title: 'Making the World\'s Rarest Syrup',
+                author: 'David Edwards',
+                part: ''
+              },
+              {
+                keywords: ['terrarium', 'Wardian', 'Dr. Ward', 'fern case', 'ecosystem', 'greenhouse'],
+                title: 'The World in a Bottle',
+                author: 'Janeen R. Adil',
+                part: ''
+              },
+              {
+                keywords: ['Antonio Canova', 'sculptor', 'butter', 'lion', 'Count', 'stonecutter'],
+                title: 'Antonio Canova',
+                author: 'James Baldwin',
+                part: ''
+              },
+              {
+                keywords: ['Annabel Lee', 'P.I.', 'sock', 'Exhibit A', 'detective', 'John', 'dryer'],
+                title: 'Annabel Lee, P.I.',
+                author: 'Judy Cox',
+                part: ''
               }
             ];
             
-            // Check passage content for keywords
-            const passageLower = passageText.toLowerCase();
+            // Check passage content for keywords (reuse passageLower from above)
             for (const detector of passageDetectors) {
               const matchCount = detector.keywords.filter(keyword => 
                 passageLower.includes(keyword.toLowerCase())
@@ -550,119 +616,244 @@ function TakeQuiz() {
                 
                 const lines = text.split('\n');
                 let cleanedLines = [];
-                let skipNext = false;
                 let foundTitle = false;
                 let foundAuthor = false;
+                let isFirstContentLine = true; // Track if we're still at the beginning
                 
+                // Process lines
                 for (let i = 0; i < lines.length; i++) {
                   const line = lines[i].trim();
+                  const originalLine = lines[i]; // Keep original spacing
                   
-                  // Skip empty lines at the start
+                  // Skip empty lines at the very start
                   if (cleanedLines.length === 0 && !line) continue;
                   
-                  // Skip "Part 1" or "Part 2" lines
-                  if (line.match(/^Part\s+[12]$/i)) {
-                    skipNext = true;
+                  // Skip "Part 1" or "Part 2" standalone lines (not paragraph numbers)
+                  if (line.match(/^Part\s+[12]$/i) || line.match(/^\(Part\s+[12]\)$/i)) {
                     continue;
                   }
                   
-                  // Skip title (first non-empty line that's not a paragraph number)
-                  if (!foundTitle && line && !line.match(/^\d+$/) && line.length < 100) {
-                    foundTitle = true;
-                    skipNext = true;
-                    continue;
+                  // Detect title: check if this is the first content line we're processing
+                  // and it looks like a title followed by "by Author" OR "This article/text..."
+                  if (!foundTitle && isFirstContentLine && line && 
+                      !line.match(/^\d+$/) && 
+                      line.length >= 3 && line.length <= 150) {
+                    
+                    // Look ahead for "by Author" pattern OR "This article/text..." metadata (within next 6 lines, skipping empty lines)
+                    let foundByAuthor = false;
+                    let foundMetadata = false;
+                    let emptyLinesCount = 0;
+                    for (let j = i + 1; j < Math.min(i + 7, lines.length); j++) {
+                      const nextLine = lines[j].trim();
+                      if (!nextLine) {
+                        emptyLinesCount++;
+                        if (emptyLinesCount > 2) break; // Too many empty lines, probably not author/metadata
+                        continue;
+                      }
+                      
+                      // Check for "by Author" pattern
+                      if (nextLine.match(/^by\s+.+$/i)) {
+                        foundByAuthor = true;
+                        break;
+                      }
+                      
+                      // Check for "This article/text was written/published..." metadata
+                      if (nextLine.match(/^This\s+(article|text)\s+was\s+(written|published)/i)) {
+                        foundMetadata = true;
+                        break;
+                      }
+                      
+                      // If we hit actual content (starts with lowercase letter that's not a title word), stop looking
+                      // But allow "This article..." metadata lines
+                      if (nextLine.match(/^[a-z]/) && 
+                          !nextLine.match(/^(This\s+(article|text)|by\s+)/i) &&
+                          nextLine.length > 50) {
+                        break; // This looks like actual passage content
+                      }
+                      
+                      // Also stop if we hit paragraph numbers or Part markers
+                      if (nextLine.match(/^\d+$/) || nextLine.match(/^Part\s+[12]$/i)) {
+                        break;
+                      }
+                    }
+                    
+                    // Title is valid if followed by "by Author" OR "This article..." metadata
+                    if (foundByAuthor || foundMetadata) {
+                      // If we found "by Author" or metadata after this line, it's almost certainly a title
+                      // Just make sure it doesn't look like passage content (doesn't start with lowercase dialogue)
+                      const looksLikeTitle = !line.match(/^[a-z]/) || // Doesn't start with lowercase
+                                            line.match(/^(Excerpt|Adapted|Making|The|Antonio|Annabel|Libby|Amelia|What's|Dinos)/i) ||
+                                            line.length < 60;
+                      
+                      if (looksLikeTitle) {
+                        foundTitle = true;
+                        isFirstContentLine = false;
+                        continue; // Skip title line
+                      }
+                    }
                   }
                   
-                  // Skip "by Author" line
+                  // Mark that we've passed the first content line
+                  if (line && !foundTitle) {
+                    isFirstContentLine = false;
+                  }
+                  
+                  // Skip "by Author" line (only if we found a title)
                   if (foundTitle && !foundAuthor && line.match(/^by\s+.+$/i)) {
                     foundAuthor = true;
                     continue;
                   }
                   
-                  // Skip "This article/text was written..." lines
-                  if (foundTitle && line.match(/^This\s+(article|text)\s+was\s+written/i)) {
+                  // Skip "This article/text was written/published..." lines (only after title)
+                  // This handles cases where there's no author but there's metadata (like "What's It Like to Be a Chef?")
+                  if (foundTitle && line.match(/^This\s+(article|text)\s+was\s+(written|published)/i)) {
                     continue;
                   }
                   
-                  // Skip next line if we just skipped title
-                  if (skipNext) {
-                    skipNext = false;
+                  // Skip lines that are just "(Part 1)" or "(Part 2)" - these should only be in title box
+                  if (line.match(/^\(Part\s+[12]\)$/i)) {
                     continue;
                   }
                   
-                  cleanedLines.push(lines[i]); // Keep original line with spacing
+                  // Keep all other lines (including passage content)
+                  cleanedLines.push(originalLine); // Keep original line with spacing
+                  isFirstContentLine = false; // We've added content, so we're past the title section
                 }
                 
-                return cleanedLines.join('\n').trim();
+                // Remove any duplicate consecutive lines
+                const result = cleanedLines.join('\n').trim();
+                const resultLines = result.split('\n');
+                const deduplicatedLines = [];
+                for (let i = 0; i < resultLines.length; i++) {
+                  const current = resultLines[i].trim();
+                  const previous = i > 0 ? resultLines[i - 1].trim() : '';
+                  // Skip if this line is identical to the previous line (duplicate)
+                  if (current && current !== previous) {
+                    deduplicatedLines.push(resultLines[i]);
+                  } else if (!current) {
+                    // Keep empty lines
+                    deduplicatedLines.push(resultLines[i]);
+                  }
+                }
+                return deduplicatedLines.join('\n').trim();
               };
               
               // For "both parts" questions, try to split into Part 1 and Part 2 for visual separation
               let displayParts = [];
+              let originalParts = []; // Keep original passage parts for title extraction
               
               if (isBothParts && passageParts && passageParts.length >= 2) {
                 // For "both parts", we need to split the full passage into Part 1 and Part 2
-                // The passageParts array contains all paragraphs separated by double newlines
-                // We need to find where Part 1 ends and Part 2 begins
-                // Strategy: if we have exactly 2 large parts, use them; otherwise split by content length
+                // Look for "Part 2" marker in the passage text to find the split point
+                const passageLower = passage.toLowerCase();
+                const part2Marker = passage.match(/\n\nPart\s+2\s*\n\n/i) || passage.match(/\nPart\s+2\s*\n/i);
                 
-                if (passageParts.length === 2 && 
+                if (part2Marker) {
+                  // Found "Part 2" marker - split there
+                  const splitIndex = part2Marker.index + part2Marker[0].length;
+                  originalParts = [
+                    passage.substring(0, part2Marker.index).trim(),
+                    passage.substring(splitIndex).trim()
+                  ];
+                  displayParts = originalParts.map(cleanPassageText);
+                } else if (passageParts.length === 2 && 
                     passageParts[0].length > 200 && 
                     passageParts[1].length > 200) {
                   // Likely already split correctly into Part 1 and Part 2
+                  originalParts = passageParts; // Keep original for title extraction
                   displayParts = passageParts.map(cleanPassageText);
                 } else {
                   // Multiple smaller parts - need to combine and split intelligently
-                  // Split the full passage roughly in half, looking for a natural break
-                  const fullPassage = cleanPassageText(passage); // This already has all text joined
-                  const midPoint = Math.floor(fullPassage.length / 2);
+                  // Look for a part that contains "Part 2" text
+                  let part2Index = -1;
+                  for (let i = 0; i < passageParts.length; i++) {
+                    if (passageParts[i].toLowerCase().includes('part 2')) {
+                      part2Index = i;
+                      break;
+                    }
+                  }
                   
-                  // Look backwards from midpoint for a double newline (natural paragraph break)
-                  const beforeMid = fullPassage.substring(0, midPoint);
-                  const splitPoint = beforeMid.lastIndexOf('\n\n');
-                  
-                  if (splitPoint > midPoint * 0.4) {
-                    // Found a reasonable split point
-                    displayParts = [
-                      fullPassage.substring(0, splitPoint).trim(),
-                      fullPassage.substring(splitPoint).trim()
+                  if (part2Index > 0) {
+                    // Found Part 2 - split there
+                    originalParts = [
+                      passageParts.slice(0, part2Index).join('\n\n'),
+                      passageParts.slice(part2Index).join('\n\n')
                     ];
+                    displayParts = originalParts.map(cleanPassageText);
                   } else {
-                    // No good split point found - show as single passage with full text
-                    displayParts = [cleanPassageText(passage)];
+                    // Fallback: Split the full passage roughly in half, looking for a natural break
+                    const midPoint = Math.floor(passage.length / 2);
+                    const beforeMid = passage.substring(0, midPoint);
+                    const splitPoint = beforeMid.lastIndexOf('\n\n');
+                    
+                    if (splitPoint > midPoint * 0.4) {
+                      // Found a reasonable split point
+                      originalParts = [
+                        passage.substring(0, splitPoint).trim(),
+                        passage.substring(splitPoint).trim()
+                      ];
+                      displayParts = originalParts.map(cleanPassageText);
+                    } else {
+                      // No good split point found - show as single passage with full text
+                      originalParts = [passage];
+                      displayParts = [cleanPassageText(passage)];
+                    }
                   }
                 }
               } else {
                 // Single passage - show full text, no part labels
+                originalParts = [passage];
                 displayParts = [cleanPassageText(passage)];
               }
               
-              // Compute titles for displayParts (may differ from passageParts if we split)
-              // CRITICAL: For "both parts", if Part 1 is detected, use same title for Part 2
-              let displayTitles = displayParts.map((part, idx) => extractPassageTitle(part, idx));
+              // Compute titles for displayParts using ORIGINAL passage text (before cleaning)
+              // CRITICAL: Extract titles from original text, not cleaned text
+              let displayTitles = originalParts.map((part, idx) => extractPassageTitle(part, idx));
               
               if (isBothParts && displayParts.length >= 2) {
-                // If Part 1 has a title but Part 2 doesn't, extract the title from Part 1 and apply to Part 2
+                // Ensure both parts have titles with proper Part labels
                 const part1Title = displayTitles[0];
-                if (part1Title && !displayTitles[1]) {
-                  // Extract the base title (without Part number) and add Part 2
-                  const baseTitleMatch = part1Title.match(/^(.+?)\s*\(Part\s+1\)$/i);
-                  if (baseTitleMatch) {
-                    displayTitles[1] = `${baseTitleMatch[1]} (Part 2)`;
-                  } else {
-                    // If no Part 1 in title, try to detect Part 2 separately
-                    displayTitles[1] = extractPassageTitle(displayParts[1], 1);
-                    // If still no title, use same as Part 1 but change to Part 2
-                    if (!displayTitles[1] && part1Title) {
-                      displayTitles[1] = part1Title.replace(/\(Part\s+1\)/i, '(Part 2)');
-                    }
-                  }
-                }
-                // If Part 2 has a title but Part 1 doesn't, do the reverse
                 const part2Title = displayTitles[1];
-                if (part2Title && !displayTitles[0]) {
-                  const baseTitleMatch = part2Title.match(/^(.+?)\s*\(Part\s+2\)$/i);
-                  if (baseTitleMatch) {
-                    displayTitles[0] = `${baseTitleMatch[1]} (Part 1)`;
+                
+                // Helper to extract base title (without Part label)
+                const getBaseTitle = (title) => {
+                  if (!title) return null;
+                  // Remove Part label if present (can be on same line or separate line)
+                  return title.replace(/\n?\(Part\s+[12]\)/gi, '').trim();
+                };
+                
+                // If Part 1 has a title but Part 2 doesn't
+                if (part1Title && !part2Title) {
+                  const baseTitle = getBaseTitle(part1Title);
+                  displayTitles[0] = `${baseTitle}\n(Part 1)`;
+                  displayTitles[1] = `${baseTitle}\n(Part 2)`;
+                }
+                // If Part 2 has a title but Part 1 doesn't
+                else if (part2Title && !part1Title) {
+                  const baseTitle = getBaseTitle(part2Title);
+                  displayTitles[0] = `${baseTitle}\n(Part 1)`;
+                  displayTitles[1] = `${baseTitle}\n(Part 2)`;
+                }
+                // If both have titles, ensure they have Part labels
+                else if (part1Title && part2Title) {
+                  // Get base titles (without Part labels)
+                  const baseTitle1 = getBaseTitle(part1Title);
+                  const baseTitle2 = getBaseTitle(part2Title);
+                  
+                  // Use the longer/more complete title as the base (likely has author)
+                  const baseTitle = baseTitle1.length >= baseTitle2.length ? baseTitle1 : baseTitle2;
+                  
+                  // Ensure both have Part labels
+                  displayTitles[0] = `${baseTitle}\n(Part 1)`;
+                  displayTitles[1] = `${baseTitle}\n(Part 2)`;
+                }
+                // If neither has a title, try to extract from the first part
+                else if (!part1Title && !part2Title && originalParts.length >= 2) {
+                  const extractedTitle = extractPassageTitle(originalParts[0], 0);
+                  if (extractedTitle) {
+                    const baseTitle = getBaseTitle(extractedTitle);
+                    displayTitles[0] = `${baseTitle}\n(Part 1)`;
+                    displayTitles[1] = `${baseTitle}\n(Part 2)`;
                   }
                 }
               }

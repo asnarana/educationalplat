@@ -42,7 +42,10 @@ The birds reached the goat barn. Soon Rhode Island Red had let every goat loose!
 
 Red ran on to the sheep building. Rams, lambs, and ewes all joined in the spree!"""
 
-GREAT_ESCAPE_PART2 = """Part 2
+GREAT_ESCAPE_PART2 = """The Great Escape
+by Susan Mitsch
+
+Part 2
 
 Red pecked open the pigpens and the cows' gate. He pecked open the pony boxes and horse stalls. Cows, pigs, and ponies joined the jamboree!
 
@@ -95,7 +98,10 @@ Even when I get an idea for a book, it's difficult for me to get started.
 
 Once I wanted to do a book about fish. I even had a title, Fish Eyes. To get myself in the mood, I made a list of fishy words. I wondered how it would feel to swim like a fish. Could I put those feelings into words and pictures? I went to the aquarium and made sketches as I watched beautiful fish swim by. I read so much about fish that I felt fish would swim out of my ears."""
 
-UNDER_MY_NOSE_PART2 = """Part 2
+UNDER_MY_NOSE_PART2 = """Excerpt from Under My Nose
+by Lois Ehlert
+
+Part 2
 
 ⑩
 I like to write out rough story ideas for my books, then make thumbnail sketches.
@@ -141,7 +147,10 @@ Jerry climbed to the top of his house and looked over the Smiling Pool in the di
 
 Suddenly a new thought popped into his head. \"Billy Mink saw him, and that is why he is so anxious to find Little Joe Otter. He is planning to play some trick on Grandfather Frog as sure as pollywogs have tails!\" exclaimed Jerry. Then his eyes began to twinkle as he added: \"I think I'll have some fun myself.\""""
 
-GRANDFATHER_FROG_PART2 = """Part 2
+GRANDFATHER_FROG_PART2 = """Adapted from The Adventures of Grandfather Frog: 'Billy Mink Finds Little Joe Otter'
+by Thornton W. Burgess
+
+Part 2
 
 ⑩
 Without another word Jerry slipped down into the water and swam over to the big green lily pad of Grandfather Frog. Then he pounded the water loudly with his tail. Grandfather Frog's big goggly eyes flew open, and he was just about to make a frightened plunge into the Smiling Pool when he saw Jerry.
@@ -195,7 +204,10 @@ When the foundation of the dam has been finished, the beavers pile stones and mu
 
 When the dam has been finished and the pond made, the beavers begin to think about their houses. As they like to have their rooms dry, they raise the floors of their houses some distance above the water, so that when the stream rises during the rainy season they will not be flooded."""
 
-BEAVERS_PART2 = """Part 2
+BEAVERS_PART2 = """Adapted from "Beavers at Home"
+by James Baldwin
+
+Part 2
 
 Beavers are always quite clear in their minds as to what they want, and how to get it, and they like to keep things separate. When they are in the water, they are as happy as they can be; but when they are out of it, they like to be dry. It is sometimes two or three months before the village is finished. But the little round huts are to be used only for winter homes; for during the summer no beaver would think of sleeping indoors or, indeed, of staying very long in the same place.
 
@@ -242,7 +254,10 @@ The three fallen climbers were wet and cold. But they had to keep moving to stay
 
 The three did their best to stay calm. They wrapped themselves in sleeping bags to stay warm. They knew it might take some time for rescuers to find them in the dense forest. The Mount Hood National Forest spans over one million acres! The three also huddled around Velvet, who kept them warm with her fur and body heat. Velvet also helped the climbers keep their spirits up. This is important when lost in the wilderness. A person must make up his or her mind to survive."""
 
-DOG_HERO_PART2 = """Part 2
+DOG_HERO_PART2 = """Excerpt from "Dog a Hero on Mount Hood"
+by Susan Jankowski
+
+Part 2
 
 Dogs can also be helpful because they can smell the scent of another animal. A dog may start barking to let people know danger is near. Dogs can also hear sounds that people might not hear. But perhaps their most important role is to keep people warm and comfort them. It is likely petting Velvet's black fur comforted Matty, Kate, and Christina. The same was probably true whenever the friendly dog licked their chins!
 
