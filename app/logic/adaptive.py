@@ -111,81 +111,96 @@ def select_questions_for_quiz(
     # Special case: If ALL topics are weak, distribute evenly across all topics
     # This prevents uneven distribution when student struggles with everything
     if weak_topics and set(weak_topics) == set(topics):
-        # All topics are weak - just distribute evenly
+        # All topics are weak - distribute evenly with strict equal distribution
         questions_per_topic = num_questions // len(topics)
         remainder = num_questions % len(topics)
         
         selected_questions: List[Question] = []
         selected_ids: Set[int] = set()
         
-        # Distribute evenly across all topics
+        # Track how many questions each topic should get
+        topic_targets = {}
         for i, topic in enumerate(topics):
-            # Add one extra question to first 'remainder' topics if needed
-            needed = questions_per_topic + (1 if i < remainder else 0)
-            
-            topic_questions = (
-                db.query(Question)
-                .filter(
-                    Question.grade_level == grade_level,
-                    Question.topic == topic,
-                    ~Question.id.in_(exclude_question_ids)
-                )
-                .all()
-            )
-            
-            # Filter out already selected, exclude keywords, and randomize
-            available = filter_by_keywords([
-                q for q in topic_questions if q.id not in selected_ids
-            ])
-            random.shuffle(available)  # Randomize to ensure different questions each time
-            
-            for q in available[:needed]:
-                if len(selected_questions) < num_questions:
-                    selected_questions.append(q)
-                    selected_ids.add(q.id)
+            # First 'remainder' topics get one extra question
+            topic_targets[topic] = questions_per_topic + (1 if i < remainder else 0)
         
-        # If we still need more questions, fill from any available topic
-        if len(selected_questions) < num_questions:
-            all_available = (
-                db.query(Question)
-                .filter(
-                    Question.grade_level == grade_level,
-                    Question.topic.in_(topics),
-                    ~Question.id.in_(exclude_question_ids)
-                )
-                .all()
-            )
-            
-            # Randomize before selecting (exclude keywords)
-            available_list = filter_by_keywords([
-                q for q in all_available if q.id not in selected_ids
-            ])
-            random.shuffle(available_list)
-            
-            for q in available_list:
-                if len(selected_questions) < num_questions:
-                    selected_questions.append(q)
-                    selected_ids.add(q.id)
+        # Track how many questions each topic has actually received
+        topic_counts = {topic: 0 for topic in topics}
         
-        # Final fallback: allow repeats if needed
-        if len(selected_questions) < num_questions:
-            all_questions = (
-                db.query(Question)
-                .filter(
-                    Question.grade_level == grade_level,
-                    Question.topic.in_(topics)
+        # Fill each topic to its target, ensuring equal distribution
+        for topic in topics:
+            target = topic_targets[topic]
+            while topic_counts[topic] < target and len(selected_questions) < num_questions:
+                topic_questions = (
+                    db.query(Question)
+                    .filter(
+                        Question.grade_level == grade_level,
+                        Question.topic == topic,
+                        ~Question.id.in_(exclude_question_ids)
+                    )
+                    .all()
                 )
-                .all()
-            )
+                
+                # Filter out already selected, exclude keywords, and randomize
+                available = filter_by_keywords([
+                    q for q in topic_questions if q.id not in selected_ids
+                ])
+                random.shuffle(available)  # Randomize to ensure different questions each time
+                
+                # Select one question from this topic
+                found = False
+                for q in available:
+                    if q.id not in selected_ids and topic_counts[topic] < target:
+                        selected_questions.append(q)
+                        selected_ids.add(q.id)
+                        topic_counts[topic] += 1
+                        found = True
+                        break
+                
+                # If no more questions available for this topic, break
+                if not found:
+                    break
+        
+        # If we still haven't filled all slots, redistribute remaining slots evenly
+        remaining_needed = num_questions - len(selected_questions)
+        if remaining_needed > 0:
+            # Find topics that haven't reached their target yet
+            under_target_topics = [
+                topic for topic in topics 
+                if topic_counts[topic] < topic_targets[topic]
+            ]
             
-            # Randomize before selecting (exclude keywords)
-            all_questions_filtered = filter_by_keywords(all_questions)
-            random.shuffle(all_questions_filtered)
+            # If all topics are at target but we still need more, distribute evenly
+            if not under_target_topics:
+                under_target_topics = topics
             
-            for q in all_questions_filtered:
-                if q.id not in selected_ids and len(selected_questions) < num_questions:
-                    selected_questions.append(q)
-                    selected_ids.add(q.id)
+            # Distribute remaining questions evenly among under-target topics
+            for i in range(remaining_needed):
+                if not under_target_topics:
+                    break
+                
+                # Cycle through topics to distribute evenly
+                topic = under_target_topics[i % len(under_target_topics)]
+                
+                topic_questions = (
+                    db.query(Question)
+                    .filter(
+                        Question.grade_level == grade_level,
+                        Question.topic == topic,
+                        ~Question.id.in_(exclude_question_ids)
+                    )
+                    .all()
+                )
+                
+                available = filter_by_keywords([
+                    q for q in topic_questions if q.id not in selected_ids
+                ])
+                random.shuffle(available)
+                
+                if available:
+                    selected_questions.append(available[0])
+                    selected_ids.add(available[0].id)
+                    topic_counts[topic] += 1
         
         # CRITICAL: Final shuffle to randomize order of selected questions
         # This ensures questions appear in different order each time
@@ -210,119 +225,109 @@ def select_questions_for_quiz(
     selected_questions: List[Question] = []
     selected_ids: Set[int] = set()
     
-    # Special case: If no weak topics, ensure ALL topics get at least one question
+    # Special case: If no weak topics, ensure STRICT equal distribution across all topics
     if not weak_topics:
-        # Distribute evenly across all topics, ensuring each gets at least 1
+        # Calculate strict distribution: questions_per_topic + remainder distributed to first topics
         questions_per_topic = num_questions // len(topics)
         remainder = num_questions % len(topics)
         
-        # First pass: Give each topic at least 1 question, then distribute remainder
+        # Track how many questions each topic should get
+        topic_targets = {}
         for i, topic in enumerate(topics):
-            # Calculate how many this topic should get
-            needed = questions_per_topic + (1 if i < remainder else 0)
-            if needed == 0:
-                needed = 1  # Ensure at least 1 per topic
-            
-            topic_questions = (
-                db.query(Question)
-                .filter(
-                    Question.grade_level == grade_level,
-                    Question.topic == topic,
-                    ~Question.id.in_(exclude_question_ids)
-                )
-                .all()
-            )
-            
-            # Filter out already selected, exclude keywords, and randomize
-            available = filter_by_keywords([
-                q for q in topic_questions if q.id not in selected_ids
-            ])
-            # CRITICAL: Randomize BEFORE selecting to ensure different questions each time
-            random.shuffle(available)
-            # Ensure no duplicates within the same topic
-            available = [q for q in available if q.id not in selected_ids]
-            
-            for q in available[:needed]:
-                if len(selected_questions) < num_questions and q.id not in selected_ids:
-                    selected_questions.append(q)
-                    selected_ids.add(q.id)
+            # First 'remainder' topics get one extra question
+            topic_targets[topic] = questions_per_topic + (1 if i < remainder else 0)
         
-        # CRITICAL: Check if all topics are represented - if not, get at least 1 from missing topics
-        # This ensures all 5 topics show up even if some have all questions excluded
-        represented_topics = set(q.topic for q in selected_questions)
-        missing_topics = [t for t in topics if t not in represented_topics]
+        # Track how many questions each topic has actually received
+        topic_counts = {topic: 0 for topic in topics}
         
-        # For missing topics, allow repeats if needed to ensure representation
-        if missing_topics:
-            for topic in missing_topics:
-                if len(selected_questions) >= num_questions:
-                    break
-                    
-                # Get any question from this topic (even if excluded/repeated)
+        # First pass: Fill each topic to its target, ensuring equal distribution
+        for topic in topics:
+            target = topic_targets[topic]
+            while topic_counts[topic] < target and len(selected_questions) < num_questions:
                 topic_questions = (
                     db.query(Question)
                     .filter(
                         Question.grade_level == grade_level,
-                        Question.topic == topic
+                        Question.topic == topic,
+                        ~Question.id.in_(exclude_question_ids)
                     )
                     .all()
                 )
                 
-                if topic_questions:
-                    # Prefer not already selected, but allow repeat if needed
-                    # Filter by keywords first
-                    available = filter_by_keywords([
-                        q for q in topic_questions if q.id not in selected_ids
-                    ])
-                    random.shuffle(available)  # Randomize
-                    if not available:
-                        # Allow repeat to ensure topic is represented, but still exclude keywords
-                        available = filter_by_keywords(topic_questions)
-                        random.shuffle(available)  # Randomize even repeats
-                    
-                    if available:
-                        selected_questions.append(available[0])
-                        selected_ids.add(available[0].id)
+                # Filter out already selected, exclude keywords, and randomize
+                available = filter_by_keywords([
+                    q for q in topic_questions if q.id not in selected_ids
+                ])
+                random.shuffle(available)  # Randomize BEFORE selecting
+                
+                # Select one question from this topic
+                found = False
+                for q in available:
+                    if q.id not in selected_ids and topic_counts[topic] < target:
+                        selected_questions.append(q)
+                        selected_ids.add(q.id)
+                        topic_counts[topic] += 1
+                        found = True
+                        break
+                
+                # If no more questions available for this topic, break
+                if not found:
+                    break
         
-        # If we still need more questions, fill from any available topic
-        if len(selected_questions) < num_questions:
-            all_available = (
-                db.query(Question)
-                .filter(
-                    Question.grade_level == grade_level,
-                    Question.topic.in_(topics),
-                    ~Question.id.in_(exclude_question_ids)
+        # If we still haven't filled all slots, redistribute remaining slots evenly
+        # This handles cases where some topics don't have enough questions
+        remaining_needed = num_questions - len(selected_questions)
+        if remaining_needed > 0:
+            # Find topics that haven't reached their target yet
+            under_target_topics = [
+                topic for topic in topics 
+                if topic_counts[topic] < topic_targets[topic]
+            ]
+            
+            # If all topics are at target but we still need more, distribute evenly
+            if not under_target_topics:
+                under_target_topics = topics
+            
+            # Distribute remaining questions evenly among under-target topics
+            for i in range(remaining_needed):
+                if not under_target_topics:
+                    break
+                
+                # Cycle through topics to distribute evenly
+                topic = under_target_topics[i % len(under_target_topics)]
+                
+                topic_questions = (
+                    db.query(Question)
+                    .filter(
+                        Question.grade_level == grade_level,
+                        Question.topic == topic,
+                        ~Question.id.in_(exclude_question_ids)
+                    )
+                    .all()
                 )
-                .all()
-            )
-            
-            # Filter by keywords
-            all_available_filtered = filter_by_keywords([
-                q for q in all_available if q.id not in selected_ids
-            ])
-            
-            for q in all_available_filtered:
-                if len(selected_questions) < num_questions:
-                    selected_questions.append(q)
-                    selected_ids.add(q.id)
+                
+                available = filter_by_keywords([
+                    q for q in topic_questions if q.id not in selected_ids
+                ])
+                random.shuffle(available)
+                
+                if available:
+                    selected_questions.append(available[0])
+                    selected_ids.add(available[0].id)
+                    topic_counts[topic] += 1
         
-        # Final fallback: allow repeats if needed
-        if len(selected_questions) < num_questions:
-            all_questions = (
-                db.query(Question)
-                .filter(
-                    Question.grade_level == grade_level,
-                    Question.topic.in_(topics)
-                )
-                .all()
-            )
-            
-            for q in all_questions:
-                if q.id not in selected_ids and len(selected_questions) < num_questions:
-                    selected_questions.append(q)
-                    selected_ids.add(q.id)
+        # Final shuffle to randomize order
+        random.shuffle(selected_questions)
         
-        return selected_questions[:num_questions]
+        # Final check: Ensure no duplicates
+        seen_ids = set()
+        unique_questions = []
+        for q in selected_questions:
+            if q.id not in seen_ids:
+                unique_questions.append(q)
+                seen_ids.add(q.id)
+        
+        return unique_questions[:num_questions]
     
     # Step 1: Select questions from weak topics (70% focus)
     if weak_topics and num_weak > 0:

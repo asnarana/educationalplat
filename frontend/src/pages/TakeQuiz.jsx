@@ -744,60 +744,270 @@ function TakeQuiz() {
               
               if (isBothParts && passageParts && passageParts.length >= 2) {
                 // For "both parts", we need to split the full passage into Part 1 and Part 2
-                // Look for "Part 2" marker in the passage text to find the split point
-                const passageLower = passage.toLowerCase();
-                const part2Marker = passage.match(/\n\nPart\s+2\s*\n\n/i) || passage.match(/\nPart\s+2\s*\n/i);
+                // CRITICAL: Look for duplicate title pattern BEFORE "Part 2" marker
+                // When both parts are concatenated, Part 2 starts with: "Title\nby Author\n\nPart 2\n\nContent"
+                // We need to find where the duplicate title begins and split there
                 
-                if (part2Marker) {
-                  // Found "Part 2" marker - split there
-                  const splitIndex = part2Marker.index + part2Marker[0].length;
-                  originalParts = [
-                    passage.substring(0, part2Marker.index).trim(),
-                    passage.substring(splitIndex).trim()
-                  ];
+                // First, try to find the duplicate title pattern before "Part 2"
+                // Pattern: Title (e.g., "The Great Escape") followed by "by Author" then "Part 2"
+                const duplicateTitlePatterns = [
+                  /\n\nThe Great Escape\s*\nby Susan Mitsch\s*\n\nPart\s+2\s*\n\n/i,
+                  /\n\nExcerpt from Under My Nose\s*\nby Lois Ehlert\s*\n\nPart\s+2\s*\n\n/i,
+                  /\n\nAdapted from.*Grandfather Frog.*\nby.*\n\nPart\s+2\s*\n\n/i,
+                  /\n\nAdapted from.*Beavers.*\nby.*\n\nPart\s+2\s*\n\n/i,
+                  /\n\nExcerpt from.*Dog a Hero.*\nby.*\n\nPart\s+2\s*\n\n/i
+                ];
+                
+                let duplicateTitleMatch = null;
+                for (const pattern of duplicateTitlePatterns) {
+                  duplicateTitleMatch = passage.match(pattern);
+                  if (duplicateTitleMatch) break;
+                }
+                
+                // If we found duplicate title pattern, split there
+                if (duplicateTitleMatch) {
+                  // Split BEFORE the duplicate title (which is the start of Part 2)
+                  const part1Text = passage.substring(0, duplicateTitleMatch.index).trim();
+                  
+                  // Part 2 starts after the duplicate title and "Part 2" marker
+                  // Find where actual Part 2 content starts (after "Part 2\n\n")
+                  let part2ContentStart = duplicateTitleMatch.index + duplicateTitleMatch[0].length;
+                  while (part2ContentStart < passage.length && 
+                         (passage[part2ContentStart] === '\n' || passage[part2ContentStart] === ' ' || passage[part2ContentStart] === '\r')) {
+                    part2ContentStart++;
+                  }
+                  const part2Text = passage.substring(part2ContentStart).trim();
+                  
+                  originalParts = [part1Text, part2Text];
                   displayParts = originalParts.map(cleanPassageText);
-                } else if (passageParts.length === 2 && 
-                    passageParts[0].length > 200 && 
-                    passageParts[1].length > 200) {
-                  // Likely already split correctly into Part 1 and Part 2
-                  originalParts = passageParts; // Keep original for title extraction
-                  displayParts = passageParts.map(cleanPassageText);
                 } else {
-                  // Multiple smaller parts - need to combine and split intelligently
-                  // Look for a part that contains "Part 2" text
-                  let part2Index = -1;
-                  for (let i = 0; i < passageParts.length; i++) {
-                    if (passageParts[i].toLowerCase().includes('part 2')) {
-                      part2Index = i;
+                  // Fallback: Look for "Part 2" marker directly
+                  const part2Match = passage.match(/\n\nPart\s+2\s*\n\n/i) || 
+                                     passage.match(/\n\nPart\s+2\s*\n/i) ||
+                                     passage.match(/\nPart\s+2\s*\n\n/i) ||
+                                     passage.match(/\nPart\s+2\s*\n/i) || 
+                                     passage.match(/^Part\s+2\s*\n/i) ||
+                                     passage.match(/\n\nPart\s+2\s/i) ||
+                                     passage.match(/Part\s+2\s*\n/i);
+                  
+                  if (part2Match) {
+                    // Found Part 2 marker - split there
+                    // CRITICAL: Everything BEFORE "Part 2" marker is Part 1
+                    // Everything AFTER "Part 2" marker is Part 2
+                    
+                    // Find where Part 2 content actually starts (after "Part 2" marker and newlines)
+                    let part2ContentStart = part2Match.index + part2Match[0].length;
+                    // Skip any leading whitespace/newlines to find actual content start
+                    while (part2ContentStart < passage.length && 
+                           (passage[part2ContentStart] === '\n' || passage[part2ContentStart] === ' ' || passage[part2ContentStart] === '\r')) {
+                      part2ContentStart++;
+                    }
+                    
+                    // Part 1: Everything before "Part 2" marker (should end with Part 1 content)
+                    const part1Text = passage.substring(0, part2Match.index).trim();
+                    
+                    // Part 2: Everything after "Part 2" marker (should start with Part 2 content)
+                    const part2Text = passage.substring(part2ContentStart).trim();
+                    
+                    // VERIFICATION: Ensure Part 1 doesn't contain Part 2 content
+                  // Part 2 typically starts with specific phrases
+                  const part2StartPhrases = [
+                    'red pecked open the pigpens',
+                    'i like to write out rough story',
+                    'jerry muskrat',
+                    'the beavers build their houses',
+                    'the rescue team'
+                  ];
+                  
+                  const part1Lower = part1Text.toLowerCase();
+                  const part2Lower = part2Text.toLowerCase();
+                  
+                  // Check if Part 1 incorrectly contains Part 2 content
+                  // Look for Part 2 start phrases in Part 1 (they shouldn't be there)
+                  let part2ContentInPart1 = null;
+                  for (const phrase of part2StartPhrases) {
+                    const phraseIndex = part1Lower.indexOf(phrase);
+                    if (phraseIndex > 0) {
+                      // Found Part 2 content in Part 1 - this is wrong!
+                      // Find the last occurrence of Part 1 content before this phrase
+                      part2ContentInPart1 = phraseIndex;
                       break;
                     }
                   }
                   
-                  if (part2Index > 0) {
-                    // Found Part 2 - split there
+                  // Check if Part 2 correctly starts with Part 2 content
+                  const part2StartsWithCorrectContent = part2StartPhrases.some(phrase => 
+                    part2Lower.startsWith(phrase) || 
+                    part2Lower.match(new RegExp(`^[\\s\\n]*${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'))
+                  );
+                  
+                  // If Part 1 has Part 2 content, we need to find a better split point
+                  if (part2ContentInPart1 !== null) {
+                    // Part 2 content is incorrectly in Part 1 - find where Part 1 should actually end
+                    // Look backwards from the Part 2 content to find a natural break (double newline or end of sentence)
+                    let actualPart1End = part2ContentInPart1;
+                    
+                    // Try to find a double newline before the Part 2 content
+                    const lastDoubleNewline = part1Text.substring(0, part2ContentInPart1).lastIndexOf('\n\n');
+                    if (lastDoubleNewline > part2ContentInPart1 * 0.5) {
+                      // Found a reasonable break point
+                      actualPart1End = lastDoubleNewline;
+                    } else {
+                      // Look for end of sentence before Part 2 content
+                      const lastPeriod = part1Text.substring(0, part2ContentInPart1).lastIndexOf('.');
+                      if (lastPeriod > part2ContentInPart1 * 0.7) {
+                        actualPart1End = lastPeriod + 1;
+                      }
+                    }
+                    
+                    // Split at the corrected point
+                    const correctedPart1 = part1Text.substring(0, actualPart1End).trim();
+                    const correctedPart2 = part1Text.substring(actualPart1End).trim() + '\n\n' + part2Text;
+                    
+                    originalParts = [correctedPart1, correctedPart2];
+                    displayParts = originalParts.map(cleanPassageText);
+                  } else if (!part2StartsWithCorrectContent && part2Text.length > 0) {
+                    // Part 2 doesn't start with expected content - might be missing title/header
+                    // Check if Part 2 text starts with a title that should be removed
+                    const part2FirstLine = part2Text.split('\n')[0].toLowerCase();
+                    if (part2FirstLine.includes('the great escape') || 
+                        part2FirstLine.includes('under my nose') ||
+                        part2FirstLine.includes('grandfather frog') ||
+                        part2FirstLine.includes('beavers') ||
+                        part2FirstLine.includes('dog a hero')) {
+                      // Part 2 starts with title - find where actual content starts
+                      const titleEndIndex = part2Text.indexOf('\n\n');
+                      if (titleEndIndex > 0) {
+                        const correctedPart2 = part2Text.substring(titleEndIndex + 2).trim();
+                        originalParts = [part1Text, correctedPart2];
+                        displayParts = originalParts.map(cleanPassageText);
+                      } else {
+                        originalParts = [part1Text, part2Text];
+                        displayParts = originalParts.map(cleanPassageText);
+                      }
+                    } else {
+                      // Normal case: split is correct
+                      originalParts = [part1Text, part2Text];
+                      displayParts = originalParts.map(cleanPassageText);
+                    }
+                  } else {
+                    // Normal case: split is correct
+                    originalParts = [part1Text, part2Text];
+                    displayParts = originalParts.map(cleanPassageText);
+                  }
+                  } else {
+                    // No Part 2 marker found - try to find in passageParts array
+                  let part1Index = -1;
+                  let part2Index = -1;
+                  
+                  // Look for Part 1 and Part 2 markers in each part
+                  for (let i = 0; i < passageParts.length; i++) {
+                    const partLower = passageParts[i].toLowerCase();
+                    if (partLower.includes('part 1') && !partLower.includes('part 2')) {
+                      part1Index = i;
+                    }
+                    if (partLower.includes('part 2')) {
+                      part2Index = i;
+                    }
+                  }
+                  
+                  // If we found both parts in the array, use them directly
+                  if (part1Index >= 0 && part2Index > part1Index) {
+                    // Combine all parts before Part 2 as Part 1, and Part 2 onwards as Part 2
+                    originalParts = [
+                      passageParts.slice(0, part2Index).join('\n\n'),
+                      passageParts.slice(part2Index).join('\n\n')
+                    ];
+                    displayParts = originalParts.map(cleanPassageText);
+                  } else if (part2Index > 0) {
+                    // Found Part 2 but not Part 1 - split at Part 2
                     originalParts = [
                       passageParts.slice(0, part2Index).join('\n\n'),
                       passageParts.slice(part2Index).join('\n\n')
                     ];
                     displayParts = originalParts.map(cleanPassageText);
                   } else {
-                    // Fallback: Split the full passage roughly in half, looking for a natural break
-                    const midPoint = Math.floor(passage.length / 2);
-                    const beforeMid = passage.substring(0, midPoint);
-                    const splitPoint = beforeMid.lastIndexOf('\n\n');
+                    // No clear markers in passageParts - try to find in full passage text
+                    const passageLower2 = passage.toLowerCase();
                     
-                    if (splitPoint > midPoint * 0.4) {
-                      // Found a reasonable split point
+                    // Look for Part 2 marker in full passage (most reliable indicator)
+                    const part2Match2 = passage.match(/\n\nPart\s+2\s*\n\n/i) || 
+                                        passage.match(/\n\nPart\s+2\s*\n/i) ||
+                                        passage.match(/\nPart\s+2\s*\n\n/i) ||
+                                        passage.match(/\nPart\s+2\s*\n/i) || 
+                                        passage.match(/^Part\s+2\s*\n/i) ||
+                                        passage.match(/\n\nPart\s+2\s/i) ||
+                                        passage.match(/Part\s+2\s*\n/i);
+                    
+                    // Also look for duplicate title pattern (e.g., "The Great Escape" appears twice)
+                    const titlePatterns = [
+                      /The Great Escape/gi,
+                      /Under My Nose/gi,
+                      /Grandfather Frog/gi,
+                      /Beavers at Home/gi,
+                      /Dog a Hero on Mount Hood/gi
+                    ];
+                    
+                    let duplicateTitleIndex = -1;
+                    for (const pattern of titlePatterns) {
+                      const matches = [...passage.matchAll(pattern)];
+                      if (matches.length >= 2) {
+                        const firstMatch = matches[0];
+                        const secondMatch = matches[1];
+                        const contentBetween = passage.substring(firstMatch.index + firstMatch[0].length, secondMatch.index);
+                        if (contentBetween.length > 100) {
+                          duplicateTitleIndex = secondMatch.index;
+                          break;
+                        }
+                      }
+                    }
+                    
+                    if (part2Match2) {
+                      // Found Part 2 marker - split there (most reliable)
+                      const splitIndex = part2Match2.index + part2Match2[0].length;
                       originalParts = [
-                        passage.substring(0, splitPoint).trim(),
-                        passage.substring(splitPoint).trim()
+                        passage.substring(0, part2Match2.index).trim(),
+                        passage.substring(splitIndex).trim()
                       ];
                       displayParts = originalParts.map(cleanPassageText);
+                    } else if (duplicateTitleIndex > 0) {
+                      // Found duplicate title - split before the duplicate title
+                      const beforeTitle = passage.substring(0, duplicateTitleIndex);
+                      const lastDoubleNewline = beforeTitle.lastIndexOf('\n\n');
+                      
+                      if (lastDoubleNewline > duplicateTitleIndex * 0.3) {
+                        originalParts = [
+                          passage.substring(0, lastDoubleNewline).trim(),
+                          passage.substring(lastDoubleNewline).trim()
+                        ];
+                        displayParts = originalParts.map(cleanPassageText);
+                      } else {
+                        originalParts = [
+                          beforeTitle.trim(),
+                          passage.substring(duplicateTitleIndex).trim()
+                        ];
+                        displayParts = originalParts.map(cleanPassageText);
+                      }
                     } else {
-                      // No good split point found - show as single passage with full text
-                      originalParts = [passage];
-                      displayParts = [cleanPassageText(passage)];
+                      // Fallback: Split the full passage roughly in half, looking for a natural break
+                      const midPoint = Math.floor(passage.length / 2);
+                      const beforeMid = passage.substring(0, midPoint);
+                      const splitPoint = beforeMid.lastIndexOf('\n\n');
+                      
+                      if (splitPoint > midPoint * 0.4) {
+                        // Found a reasonable split point
+                        originalParts = [
+                          passage.substring(0, splitPoint).trim(),
+                          passage.substring(splitPoint).trim()
+                        ];
+                        displayParts = originalParts.map(cleanPassageText);
+                      } else {
+                        // No good split point found - show as single passage with full text
+                        originalParts = [passage];
+                        displayParts = [cleanPassageText(passage)];
+                      }
                     }
+                  }
                   }
                 }
               } else {
@@ -809,6 +1019,56 @@ function TakeQuiz() {
               // Compute titles for displayParts using ORIGINAL passage text (before cleaning)
               // CRITICAL: Extract titles from original text, not cleaned text
               let displayTitles = originalParts.map((part, idx) => extractPassageTitle(part, idx));
+              
+              // CRITICAL: Ensure Part 1 comes before Part 2 by checking content
+              if (isBothParts && displayParts.length >= 2) {
+                // Verify order: Part 1 should contain "Part 1" marker or come first
+                const part1Lower = originalParts[0].toLowerCase();
+                const part2Lower = originalParts[1].toLowerCase();
+                
+                const part1HasPart1 = part1Lower.includes('part 1') && !part1Lower.includes('part 2');
+                const part2HasPart2 = part2Lower.includes('part 2');
+                const part1HasPart2 = part1Lower.includes('part 2');
+                const part2HasPart1 = part2Lower.includes('part 1') && !part2Lower.includes('part 2');
+                
+                // Check if Part 1 starts with Part 1 content (e.g., "The county was full of farms")
+                const part1StartsWithPart1Content = part1Lower.includes('the county was full of farms') || 
+                                                     part1Lower.includes('i never planned to be a writer') ||
+                                                     part1Lower.includes('billy mink ran around') ||
+                                                     part1Lower.includes('a beaver is a wild animal') ||
+                                                     part1Lower.includes('velvet was a german shepherd');
+                
+                // Check if Part 2 starts with Part 2 content (e.g., "Red pecked open the pigpens")
+                const part2StartsWithPart2Content = part2Lower.includes('red pecked open the pigpens') ||
+                                                     part2Lower.includes('i like to write out rough story') ||
+                                                     part2Lower.includes('jerry muskrat') ||
+                                                     part2Lower.includes('the beavers build their houses') ||
+                                                     part2Lower.includes('the rescue team');
+                
+                // Check if Part 1 starts with Part 2 content (wrong order indicator)
+                const part1StartsWithPart2Content = part1Lower.includes('red pecked open the pigpens') ||
+                                                     part1Lower.includes('i like to write out rough story') ||
+                                                     part1Lower.includes('jerry muskrat') ||
+                                                     part1Lower.includes('the beavers build their houses') ||
+                                                     part1Lower.includes('the rescue team');
+                
+                // Check if Part 2 starts with Part 1 content (wrong order indicator)
+                const part2StartsWithPart1Content = part2Lower.includes('the county was full of farms') || 
+                                                     part2Lower.includes('i never planned to be a writer') ||
+                                                     part2Lower.includes('billy mink ran around') ||
+                                                     part2Lower.includes('a beaver is a wild animal') ||
+                                                     part2Lower.includes('velvet was a german shepherd');
+                
+                // If parts are swapped (Part 2 comes before Part 1), swap them
+                if ((part1HasPart2 && part2HasPart1) || 
+                    (!part1HasPart1 && part2HasPart1) ||
+                    (part1StartsWithPart2Content && part2StartsWithPart1Content)) {
+                  // Parts are swapped - swap them back
+                  [originalParts[0], originalParts[1]] = [originalParts[1], originalParts[0]];
+                  [displayParts[0], displayParts[1]] = [displayParts[1], displayParts[0]];
+                  [displayTitles[0], displayTitles[1]] = [displayTitles[1], displayTitles[0]];
+                }
+              }
               
               if (isBothParts && displayParts.length >= 2) {
                 // Ensure both parts have titles with proper Part labels
