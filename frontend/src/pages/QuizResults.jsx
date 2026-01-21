@@ -9,7 +9,7 @@ function QuizResults() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [generatingNext, setGeneratingNext] = useState(false);
-  const [studentId, setStudentId] = useState(null);
+  const [user, setUser] = useState(null);
   const [gradeLevel, setGradeLevel] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
@@ -33,15 +33,29 @@ function QuizResults() {
 
   const loadResults = async () => {
     try {
-      // Get results from sessionStorage (stored when quiz was submitted)
+      // First try to get results from sessionStorage (stored when quiz was submitted)
       const storedResults = sessionStorage.getItem(`attempt_${attemptId}`);
       if (storedResults) {
         const data = JSON.parse(storedResults);
         setResults(data);
-        setStudentId(data.student_id || data.next_quiz_recommendation?.student_id);
+        // Get user from storage (authenticated user)
+        const currentUser = api.getCurrentUserFromStorage();
+        setUser(currentUser);
         setGradeLevel(data.grade_level || data.next_quiz_recommendation?.grade_level);
       } else {
-        setError('Results not found. Please submit a quiz first.');
+        // If not in sessionStorage, fetch from backend (e.g., when clicking from history)
+        try {
+          const data = await api.getAttemptResults(attemptId);
+          setResults(data);
+          // Get user from storage (authenticated user)
+          const currentUser = api.getCurrentUserFromStorage();
+          setUser(currentUser);
+          setGradeLevel(data.grade_level || data.next_quiz_recommendation?.grade_level);
+          // Store in sessionStorage for future use
+          sessionStorage.setItem(`attempt_${attemptId}`, JSON.stringify(data));
+        } catch (fetchErr) {
+          setError('Results not found. Please submit a quiz first.');
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -51,7 +65,7 @@ function QuizResults() {
   };
 
   const handleNextQuiz = async () => {
-    if (!studentId || !results?.next_quiz_recommendation) {
+    if (!user || !results?.next_quiz_recommendation) {
       alert('Cannot generate next quiz. Please start a new quiz from the home page.');
       return;
     }
@@ -62,7 +76,6 @@ function QuizResults() {
     try {
       const rec = results.next_quiz_recommendation;
       const response = await api.generateQuiz(
-        studentId,
         gradeLevel || rec.grade_level,
         rec.topics,
         rec.num_questions
@@ -79,7 +92,7 @@ function QuizResults() {
   };
 
   const handlePracticeTopic = async (topic) => {
-    if (!studentId || !gradeLevel) {
+    if (!user || !gradeLevel) {
       alert('Cannot generate practice quiz. Please start a new quiz from the home page.');
       return;
     }
@@ -89,7 +102,6 @@ function QuizResults() {
 
     try {
       const response = await api.generateTopicPractice(
-        studentId,
         gradeLevel,
         topic,
         7  // Number of practice questions
@@ -112,15 +124,40 @@ function QuizResults() {
   };
 
   const handleRetakePractice = async () => {
-    if (!results.practice_topic || !studentId || !gradeLevel) {
+    // Regenerate questions for the SAME practice quiz (reuse quiz_id, add new attempt)
+    if (!results?.quiz_id) {
+      // Fallback to generating new practice quiz if quiz_id not available
+      if (!results.practice_topic || !user?.username || !gradeLevel) {
+        return;
+      }
+      const originalMainAttemptId = results.original_attempt_id || attemptId;
+      sessionStorage.setItem('current_practice_original_attempt', originalMainAttemptId);
+      await handlePracticeTopic(results.practice_topic);
       return;
     }
-    
-    // Preserve the original main test attempt_id (not the current practice attempt_id)
-    const originalMainAttemptId = results.original_attempt_id || attemptId;
-    sessionStorage.setItem('current_practice_original_attempt', originalMainAttemptId);
-    
-    await handlePracticeTopic(results.practice_topic);
+
+    setGeneratingNext(true);
+    setError(null);
+
+    try {
+      // Regenerate questions for the existing practice quiz
+      const response = await api.regenerateQuizQuestions(results.quiz_id);
+      
+      // Preserve the original main test attempt_id
+      const originalMainAttemptId = results.original_attempt_id || attemptId;
+      sessionStorage.setItem('current_practice_original_attempt', originalMainAttemptId);
+      
+      // Store the updated quiz in sessionStorage
+      sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
+      
+      // Navigate to the SAME quiz (same quiz_id, but different questions)
+      navigate(`/quiz/${response.quiz_id}`);
+    } catch (err) {
+      setError(err.message || 'Failed to regenerate practice quiz questions');
+      alert(err.message || 'Failed to regenerate practice quiz questions');
+    } finally {
+      setGeneratingNext(false);
+    }
   };
 
   const handleBackToMainResults = () => {
@@ -135,8 +172,9 @@ function QuizResults() {
   };
 
   const handleRetakeFullTest = async () => {
-    if (!studentId || !gradeLevel || !results.next_quiz_recommendation) {
-      alert('Cannot generate quiz. Please start a new quiz from the home page.');
+    // Regenerate questions for the SAME quiz (reuse quiz_id, add new attempt)
+    if (!results?.quiz_id) {
+      alert('Cannot retake quiz. Quiz information not found.');
       return;
     }
 
@@ -144,19 +182,18 @@ function QuizResults() {
     setError(null);
 
     try {
-      const rec = results.next_quiz_recommendation;
-      const response = await api.generateQuiz(
-        studentId,
-        gradeLevel,
-        rec.topics,
-        rec.num_questions
-      );
+      // Regenerate questions for the existing quiz - this updates the quiz with new questions
+      // but keeps the same quiz_id, so attempts will be grouped together
+      const response = await api.regenerateQuizQuestions(results.quiz_id);
       
-      // Store quiz in sessionStorage
+      // Store the updated quiz in sessionStorage
       sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
+      
+      // Navigate to the SAME quiz (same quiz_id, but different questions)
       navigate(`/quiz/${response.quiz_id}`);
     } catch (err) {
-      setError(err.message || 'Failed to generate quiz');
+      setError(err.message || 'Failed to regenerate quiz questions');
+      alert(err.message || 'Failed to regenerate quiz questions');
     } finally {
       setGeneratingNext(false);
     }
@@ -188,9 +225,23 @@ function QuizResults() {
       return;
     }
 
+    // Normalize text for speech: replace math symbols with spoken words
+    let normalizedText = text
+      .replace(/\s*-\s*/g, ' minus ')  // Replace "-" with "minus" (handles spaces around minus)
+      .replace(/\s*\+\s*/g, ' plus ')   // Replace "+" with "plus"
+      .replace(/\s*×\s*/g, ' times ')    // Replace "×" with "times"
+      // Replace "x" with "times" ONLY when it's between numbers (multiplication), not when it's a variable
+      // Pattern: number-space-x-space-number (like "5 x 3" or "2 x 5")
+      .replace(/(\d+)\s+x\s+(\d+)/g, '$1 times $2')
+      .replace(/\s*÷\s*/g, ' divided by ') // Replace "÷" with "divided by"
+      .replace(/\s*\/\s*/g, ' divided by ') // Replace "/" with "divided by"
+      .replace(/\s*=\s*/g, ' equals ')   // Replace "=" with "equals"
+      .replace(/\s+/g, ' ')              // Normalize multiple spaces to single space
+      .trim();
+
     // Use browser's built-in Web Speech API (free, no backend needed)
     if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new SpeechSynthesisUtterance(normalizedText);
       
       // Configure voice settings
       utterance.rate = 1.2; // Slightly faster speed
@@ -256,9 +307,10 @@ function QuizResults() {
   const weakTopics = results.weak_topics || [];
   const isPracticeQuiz = results.is_practice_quiz || false;
   const practiceTopic = results.practice_topic || null;
+  // Use weighted_score (consistent with backend) instead of simple percentage
   const topicScore = practiceTopic && results.topic_metrics?.[practiceTopic] 
-    ? (results.topic_metrics[practiceTopic].total > 0 
-        ? ((results.topic_metrics[practiceTopic].correct / results.topic_metrics[practiceTopic].total) * 100).toFixed(1)
+    ? (results.topic_metrics[practiceTopic].weighted_score 
+        ? (results.topic_metrics[practiceTopic].weighted_score * 100).toFixed(1)
         : '0.0')
     : null;
   const isTopicMastered = topicScore && parseFloat(topicScore) >= 100;
@@ -291,10 +343,13 @@ function QuizResults() {
         <h3 style={{ marginBottom: '15px' }}>Topic Performance</h3>
         <div className="metrics-grid">
           {Object.entries(results.topic_metrics || {}).map(([topic, metrics]) => {
-            // Use simple percentage: correct/total * 100 (not weighted score)
-            const score = metrics.total > 0 ? ((metrics.correct / metrics.total) * 100).toFixed(1) : '0.0';
+            // Use weighted_score (consistent with backend logic for determining weak topics)
+            const score = metrics.weighted_score 
+              ? (metrics.weighted_score * 100).toFixed(1) 
+              : (metrics.total > 0 ? ((metrics.correct / metrics.total) * 100).toFixed(1) : '0.0');
             const isWeak = weakTopics.includes(topic);
-            const isStrong = (metrics.correct / metrics.total) >= 0.80;
+            // Check if strong using weighted_score (consistent with weak topic logic)
+            const isStrong = metrics.weighted_score ? metrics.weighted_score >= 0.80 : (metrics.correct / metrics.total) >= 0.80;
             
             return (
               <div
@@ -341,8 +396,58 @@ function QuizResults() {
           <div style={{ marginTop: '20px', padding: '15px', background: '#f0f7ff', borderRadius: '8px' }}>
             <strong>Grade Level Mastery Status:</strong>
             {results.mastery_status.mastered ? (
-              <div style={{ marginTop: '10px', color: '#28a745', fontWeight: 'bold' }}>
-                ✅ Grade Level Mastered! You've passed 2 consecutive full tests with no weak topics.
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ color: '#28a745', fontWeight: 'bold', marginBottom: '10px' }}>
+                  ✅ Grade Level {gradeLevel} Mastered! You've passed 2 consecutive full tests with no weak topics.
+                </div>
+                {results.next_grade_level && (
+                  <div style={{ marginTop: '15px', padding: '15px', background: '#d4edda', borderRadius: '8px', border: '2px solid #28a745' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '10px', fontSize: '16px' }}>
+                      🎉 Ready for the Next Level!
+                    </div>
+                    <p style={{ marginBottom: '15px' }}>
+                      You've mastered Grade {gradeLevel}! You can now move up to <strong>Grade {results.next_grade_level}</strong> questions.
+                    </p>
+                    <button
+                      className="btn"
+                      onClick={async () => {
+                        if (!user) {
+                          alert('Cannot generate quiz. Please start a new quiz from the home page.');
+                          return;
+                        }
+                        setGeneratingNext(true);
+                        setError(null);
+                        try {
+                          const topics = {
+                            3: ['Addition', 'Subtraction', 'Multiplication', 'Division', 'Fractions'],
+                            5: ['Algebra', 'Geometry', 'Decimals', 'Percentages', 'Word Problems'],
+                          };
+                          const response = await api.generateQuiz(
+                            results.next_grade_level,
+                            topics[results.next_grade_level],
+                            10
+                          );
+                          sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
+                          navigate(`/quiz/${response.quiz_id}`);
+                        } catch (err) {
+                          setError(err.message || 'Failed to generate Grade 5 quiz');
+                        } finally {
+                          setGeneratingNext(false);
+                        }
+                      }}
+                      disabled={generatingNext}
+                      style={{ 
+                        backgroundColor: '#28a745', 
+                        color: 'white',
+                        fontSize: '16px',
+                        padding: '12px 24px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {generatingNext ? 'Loading...' : `🚀 Start Grade ${results.next_grade_level} Quiz`}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ marginTop: '10px' }}>
@@ -359,14 +464,6 @@ function QuizResults() {
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {results.next_quiz_recommendation && !isPracticeQuiz && (
-          <div style={{ marginTop: '20px', padding: '15px', background: '#fff5f5', borderRadius: '8px' }}>
-            <strong>Next Quiz Focus:</strong> {results.next_quiz_recommendation.focus === 'weak_topics' 
-              ? `70% questions from weak topics: ${weakTopics.join(', ')}`
-              : 'Review all topics'}
           </div>
         )}
 
@@ -512,6 +609,11 @@ function QuizResults() {
               <button className="btn btn-secondary" onClick={() => navigate('/')}>
                 Home
               </button>
+              {user?.username && gradeLevel && (
+                <button className="btn btn-secondary" onClick={() => navigate(`/history/${user.username}`)}>
+                  View History
+                </button>
+              )}
             </>
           ) : (
             // Full quiz actions
@@ -522,12 +624,17 @@ function QuizResults() {
                   onClick={handleRetakeFullTest}
               disabled={generatingNext}
             >
-                  {generatingNext ? 'Generating...' : 'Retake Full Test (70% Focus on Weak Topics)'}
+                  {generatingNext ? 'Generating...' : 'Retake Full Test'}
             </button>
           )}
           <button className="btn btn-secondary" onClick={() => navigate('/')}>
             {results.mastery_status?.mastered ? 'Start New Quiz' : 'Back to Home'}
           </button>
+          {user && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/history/${user.username}`)}>
+              View History (All Grades)
+            </button>
+          )}
             </>
           )}
         </div>

@@ -27,7 +27,7 @@ def format_missed_questions(attempt: Attempt, questions: List[Question]) -> str:
         questions: List of Question objects from the quiz
         
     Returns:
-        Formatted string of missed questions
+        Formatted string of missed questions (truncated for long passages)
     """
     missed = []
     for question in questions:
@@ -35,8 +35,23 @@ def format_missed_questions(attempt: Attempt, questions: List[Question]) -> str:
         is_correct = str(student_answer).strip().lower() == str(question.correct_answer).strip().lower()
         
         if not is_correct:
+            # Truncate very long prompts (reading passages can be very long)
+            prompt_text = question.prompt
+            if len(prompt_text) > 1000:
+                # For reading questions, try to extract just the question part
+                if "Read" in prompt_text or "passage" in prompt_text.lower():
+                    # Find the actual question (usually after the passage)
+                    parts = prompt_text.split("\n\n")
+                    if len(parts) > 1:
+                        # Use the last part as the question
+                        prompt_text = parts[-1][:500] + "..."
+                    else:
+                        prompt_text = prompt_text[:500] + "..."
+                else:
+                    prompt_text = prompt_text[:500] + "..."
+            
             missed.append(
-                f"Question: {question.prompt}\n"
+                f"Question: {prompt_text}\n"
                 f"Your answer: {student_answer}\n"
                 f"Correct answer: {question.correct_answer}\n"
                 f"Explanation: {question.explanation or 'No explanation provided'}\n"
@@ -44,6 +59,13 @@ def format_missed_questions(attempt: Attempt, questions: List[Question]) -> str:
     
     if not missed:
         return "No questions were missed. Great job!"
+    
+    # Limit to first 5 missed questions to avoid extremely long prompts
+    if len(missed) > 5:
+        # Count how many more questions were missed
+        total_missed = len(missed)
+        missed = missed[:5]
+        missed.append(f"\n... and {total_missed - 5} more questions were missed.")
     
     return "\n---\n".join(missed)
 
@@ -156,12 +178,17 @@ def parse_llm_response(response: str) -> Dict[str, Any]:
     """
     Parse LLM response and extract JSON.
     
+    Handles incomplete JSON by attempting to fix common truncation issues.
+    Falls back to building structure from prose if JSON parsing fails.
+    
     Args:
         response: Raw LLM response string
         
     Returns:
         Parsed JSON dictionary
     """
+    import re
+    
     # Try to extract JSON from response (may have markdown code blocks)
     response = response.strip()
     
@@ -176,19 +203,156 @@ def parse_llm_response(response: str) -> Dict[str, Any]:
     
     response = response.strip()
     
+    # Try parsing the response as-is
     try:
         return json.loads(response)
-    except json.JSONDecodeError as e:
-        # If parsing fails, try to find JSON object in the response
-        start_idx = response.find("{")
+    except json.JSONDecodeError:
+        pass
+    
+    # If parsing fails, try to find JSON object in the response
+    start_idx = response.find("{")
+    if start_idx != -1:
+        # Try to find the end of the JSON object
         end_idx = response.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        if end_idx != -1 and end_idx > start_idx:
             try:
                 return json.loads(response[start_idx:end_idx + 1])
             except json.JSONDecodeError:
                 pass
+            
+        # If still failing, try to fix incomplete JSON by closing brackets/braces
+        try:
+            fixed_response = _fix_incomplete_json(response[start_idx:])
+            return json.loads(fixed_response)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    # If no JSON found or parsing failed, try to build structure from prose
+    print(f"[DEBUG] JSON parsing failed, attempting to extract from prose response")
+    return _parse_prose_response(response)
+
+
+def _parse_prose_response(response: str) -> Dict[str, Any]:
+    """
+    Parse a prose/markdown response and extract feedback structure.
+    
+    This is a fallback when the LLM doesn't return valid JSON.
+    
+    Args:
+        response: Prose response from LLM
         
-        raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}\nResponse: {response[:500]}")
+    Returns:
+        Dictionary with feedback structure
+    """
+    import re
+    
+    result = {
+        "summary": "",
+        "topics": {}
+    }
+    
+    # Try to extract summary - look for first paragraph or sentence
+    lines = response.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('*') and not line.startswith('-') and not line.startswith('#'):
+            # Skip JSON-looking content
+            if not line.startswith('{') and not line.startswith('"'):
+                # Found a prose line - use as summary
+                # Clean up any partial JSON
+                if '"summary"' in line:
+                    match = re.search(r'"summary"[:\s]*"([^"]*)"?', line)
+                    if match:
+                        result["summary"] = match.group(1)
+                        break
+                else:
+                    result["summary"] = line[:300]  # Limit summary length
+                    break
+    
+    if not result["summary"]:
+        result["summary"] = "Review the weak topics identified below and practice with the recommended questions."
+    
+    # Try to extract topics from the prose
+    # Look for topic headers followed by bullet points
+    topic_patterns = [
+        r'(?:^|\n)([A-Z][^:\n]+?):\s*\n\s*[\*\-]',  # "Topic Name:\n* bullet"
+        r'(?:^|\n)#+\s*([A-Z][^\n]+?)\s*\n',  # "## Topic Name"
+        r'"([^"]+)":\s*\{',  # JSON-style topic names
+    ]
+    
+    found_topics = set()
+    for pattern in topic_patterns:
+        matches = re.findall(pattern, response, re.MULTILINE)
+        for match in matches:
+            topic = match.strip()
+            # Filter out non-topic strings
+            if topic and len(topic) > 3 and len(topic) < 50:
+                if not any(skip in topic.lower() for skip in ['summary', 'json', 'response', 'here', 'following']):
+                    found_topics.add(topic)
+    
+    # Extract actions (bullet points)
+    action_pattern = r'[\*\-]\s*([^*\-\n][^\n]+)'
+    all_actions = re.findall(action_pattern, response)
+    
+    # Distribute actions across topics (or use defaults)
+    action_idx = 0
+    for topic in found_topics:
+        topic_actions = []
+        # Try to get 3 actions for this topic
+        while len(topic_actions) < 3 and action_idx < len(all_actions):
+            action = all_actions[action_idx].strip()
+            # Only use if it looks like an action (not a question)
+            if action and not action.endswith('?') and len(action) > 10:
+                topic_actions.append(action[:200])  # Limit length
+            action_idx += 1
+        
+        result["topics"][topic] = {
+            "actions": topic_actions,
+            "practice": []
+        }
+    
+    # If no topics found, return minimal structure
+    if not result["topics"]:
+        result["topics"]["General Review"] = {
+            "actions": ["Review the material from your lessons"],
+            "practice": []
+        }
+    
+    print(f"[DEBUG] Extracted {len(result['topics'])} topics from prose response")
+    return result
+
+
+def _fix_incomplete_json(json_str: str) -> str:
+    """
+    Attempt to fix incomplete JSON by closing brackets and braces.
+    
+    Args:
+        json_str: Potentially incomplete JSON string
+        
+    Returns:
+        Fixed JSON string
+    """
+    # Count open/close brackets and braces
+    open_braces = json_str.count("{")
+    close_braces = json_str.count("}")
+    open_brackets = json_str.count("[")
+    close_brackets = json_str.count("]")
+    
+    # Add missing closing braces
+    missing_braces = open_braces - close_braces
+    if missing_braces > 0:
+        # Check if we're in the middle of a string (don't close if we are)
+        if not json_str.rstrip().endswith('"'):
+            json_str += "}" * missing_braces
+    
+    # Add missing closing brackets
+    missing_brackets = open_brackets - close_brackets
+    if missing_brackets > 0:
+        # Check if we're in the middle of a string
+        if not json_str.rstrip().endswith('"'):
+            json_str += "]" * missing_brackets
+    
+    return json_str
 
 
 def generate_feedback(
@@ -227,14 +391,23 @@ def generate_feedback(
     # Generate prompt
     prompt = generate_feedback_prompt(attempt, quiz, questions)
     
+    # Debug: Log prompt (first 500 chars) to help diagnose issues
+    print(f"[DEBUG] Feedback prompt preview (first 500 chars):\n{prompt[:500]}...")
+    
     # Get LLM response
     try:
         response_text = llm_provider.generate(prompt)
+        print(f"[DEBUG] LLM response preview (first 500 chars):\n{response_text[:500]}...")
     except Exception as e:
         raise RuntimeError(f"Failed to generate feedback from LLM: {str(e)}")
     
     # Parse response
-    feedback = parse_llm_response(response_text)
+    try:
+        feedback = parse_llm_response(response_text)
+    except Exception as e:
+        print(f"[ERROR] Failed to parse LLM response: {e}")
+        print(f"[ERROR] Full response: {response_text}")
+        raise ValueError(f"LLM returned invalid response format: {str(e)}")
     
     # Validate structure
     if "summary" not in feedback:
@@ -243,21 +416,156 @@ def generate_feedback(
     if "topics" not in feedback:
         raise ValueError("LLM response missing 'topics' field")
     
-    # Ensure all required fields are present
+    # Get actual topics from the attempt
+    actual_topics = attempt.weak_topics if attempt.weak_topics else list(set([q.topic for q in questions]))
+    
+    # Validate that feedback topics match actual topics (case-insensitive)
+    feedback_topics = list(feedback["topics"].keys())
+    actual_topics_lower = [t.lower() for t in actual_topics]
+    
+    # Filter out topics that don't match actual topics
+    valid_topics = {}
+    for topic_name, topic_data in feedback["topics"].items():
+        # Check if topic matches (case-insensitive)
+        topic_matches = any(topic_name.lower() == actual.lower() for actual in actual_topics)
+        if topic_matches:
+            valid_topics[topic_name] = topic_data
+        else:
+            # Try to find a matching actual topic
+            matching_actual = None
+            for actual in actual_topics:
+                if actual.lower() in topic_name.lower() or topic_name.lower() in actual.lower():
+                    matching_actual = actual
+                    break
+            
+            if matching_actual:
+                valid_topics[matching_actual] = topic_data
+            else:
+                # Topic doesn't match - skip it
+                print(f"Warning: LLM generated topic '{topic_name}' that doesn't match actual topics: {actual_topics}")
+    
+    # Add missing topics with default structure
+    for actual_topic in actual_topics:
+        if actual_topic not in valid_topics:
+            valid_topics[actual_topic] = {
+                "actions": [],
+                "practice": []
+            }
+    
+    # Update feedback with validated topics
+    feedback["topics"] = valid_topics
+    
+    # Ensure all required fields are present and properly filled
     for topic_name, topic_data in feedback["topics"].items():
         if "actions" not in topic_data:
             topic_data["actions"] = []
         if "practice" not in topic_data:
             topic_data["practice"] = []
         
-        # Ensure actions is a list of 3
-        if len(topic_data["actions"]) < 3:
-            topic_data["actions"].extend([""] * (3 - len(topic_data["actions"])))
+        # Filter out empty actions and single-word actions (they should be full sentences)
+        def is_valid_action(a):
+            if not a or not isinstance(a, str):
+                return False
+            a = a.strip()
+            # Reject if too short (single word or just a couple words)
+            if len(a.split()) < 3:
+                return False
+            return True
+        
+        topic_data["actions"] = [a.strip() for a in topic_data["actions"] if is_valid_action(a)]
+        
+        # Ensure actions is a list of exactly 3 (fill with meaningful defaults if needed)
+        default_actions = [
+            f"Review {topic_name} concepts by re-reading your notes and textbook",
+            f"Practice {topic_name} by completing 5-10 similar questions each day",
+            f"Ask your teacher or a classmate to explain {topic_name} concepts you find confusing"
+        ]
+        
+        while len(topic_data["actions"]) < 3:
+            # Use default actions that haven't been used yet
+            default_idx = len(topic_data["actions"])
+            if default_idx < len(default_actions):
+                topic_data["actions"].append(default_actions[default_idx])
+            else:
+                topic_data["actions"].append(f"Continue practicing {topic_name} to improve")
+        
         topic_data["actions"] = topic_data["actions"][:3]
         
-        # Ensure practice is a list of 2
-        if len(topic_data["practice"]) < 2:
-            topic_data["practice"].extend([{}] * (2 - len(topic_data["practice"])))
+        # Filter out empty practice questions and ones with placeholder "..." answers
+        def is_placeholder(text):
+            """Check if text is a placeholder like 'The answer is...' or 'The main idea is...'"""
+            if not text:
+                return True
+            text = text.strip()
+            # Check for common placeholder patterns
+            if text.endswith("..."):
+                return True
+            if "..." in text and len(text) < 50:
+                return True
+            if text.lower().startswith(("the main", "the character", "the answer", "the passage", "sure,")):
+                if "..." in text or text.endswith("is") or len(text.split()) < 5:
+                    return True
+            return False
+        
+        # Filter out practice questions with placeholder answers
+        topic_data["practice"] = [
+            p for p in topic_data["practice"] 
+            if p and isinstance(p, dict) and p.get("q") and p.get("answer") 
+            and p.get("q").strip() and p.get("answer").strip()
+            and not is_placeholder(p.get("answer", ""))
+        ]
+        
+        # Fix explanations that are questions or placeholders
+        for practice in topic_data["practice"]:
+            explanation = practice.get("explanation", "")
+            answer = practice.get("answer", "")
+            
+            # Check if explanation is bad (question, placeholder, or too short)
+            needs_fix = False
+            if not explanation or len(explanation.strip()) < 10:
+                needs_fix = True
+            elif explanation.strip().endswith("?"):
+                needs_fix = True
+            elif explanation.strip().startswith(("Why ", "How ", "What ")):
+                needs_fix = True
+            elif "..." in explanation:
+                needs_fix = True
+            elif is_placeholder(explanation):
+                needs_fix = True
+            
+            if needs_fix:
+                # Replace with a proper explanation based on the answer
+                if answer and not is_placeholder(answer):
+                    practice["explanation"] = f"This answer is correct because it accurately describes {topic_name.lower()}. {answer}."
+                else:
+                    practice["explanation"] = f"Review {topic_name} concepts in your textbook and practice with similar questions."
+        
+        # Ensure practice is a list of exactly 2 (fill with meaningful defaults if needed)
+        default_practice = [
+            {
+                "q": f"What is an important concept in {topic_name}?",
+                "answer": "Review your notes and textbook",
+                "explanation": f"Focus on understanding {topic_name} concepts. Review the material and practice with similar questions."
+            },
+            {
+                "q": f"How can you improve your {topic_name} skills?",
+                "answer": "Practice regularly and ask for help",
+                "explanation": f"Practice {topic_name} regularly, review missed questions, and ask your teacher for clarification when needed."
+            }
+        ]
+        
+        while len(topic_data["practice"]) < 2:
+            # Use default practice questions that haven't been used yet
+            default_idx = len(topic_data["practice"])
+            if default_idx < len(default_practice):
+                topic_data["practice"].append(default_practice[default_idx])
+            else:
+                topic_data["practice"].append({
+                    "q": f"Practice question about {topic_name}",
+                    "answer": "Review the material",
+                    "explanation": f"Continue practicing {topic_name} to improve your understanding."
+                })
+        
         topic_data["practice"] = topic_data["practice"][:2]
     
     return feedback

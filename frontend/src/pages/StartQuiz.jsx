@@ -1,77 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
 function StartQuiz() {
   const navigate = useNavigate();
-  const [studentId, setStudentId] = useState('');
+  const [user, setUser] = useState(null);
   const [gradeLevel, setGradeLevel] = useState(3);
+  const [subject, setSubject] = useState('Math'); // 'Math' or 'Reading'
+  const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingTopics, setLoadingTopics] = useState(false);
   const [error, setError] = useState(null);
-  const [seeding, setSeeding] = useState(false);
 
-  const topics = {
-    3: ['Addition', 'Subtraction', 'Multiplication', 'Division', 'Fractions'],
-    5: ['Algebra', 'Geometry', 'Decimals', 'Percentages', 'Word Problems'],
-  };
+  useEffect(() => {
+    const currentUser = api.getCurrentUserFromStorage();
+    if (!currentUser) {
+      navigate('/login');
+    } else {
+      setUser(currentUser);
+    }
+  }, [navigate]);
 
-  const handleSeed = async () => {
-    setSeeding(true);
-    setError(null); // Clear error at start
+  // Fetch topics when grade level or subject changes
+  useEffect(() => {
+    const fetchTopics = async () => {
+      setLoadingTopics(true);
+      try {
+        const data = await api.getTopics(gradeLevel, subject);
+        setTopics(data.topics || []);
+      } catch (err) {
+        console.error('Error fetching topics:', err);
+        setTopics([]);
+      } finally {
+        setLoadingTopics(false);
+      }
+    };
     
-    // First, check if backend is reachable
-    try {
-      const healthCheck = await fetch('http://localhost:8000/health');
-      if (!healthCheck.ok) {
-        throw new Error('Backend not responding');
-      }
-    } catch (healthErr) {
-      setError('Cannot connect to backend server! Make sure it\'s running on http://localhost:8000. Start it with: uvicorn app.main:app --reload');
-      setSeeding(false);
-      return;
+    if (user) {
+      fetchTopics();
     }
-    
-    try {
-      // First try to seed
-      await api.seedQuestions();
-      alert('Question bank seeded successfully!');
-      setError(null); // Ensure error is cleared on success
-    } catch (err) {
-      // Check if it's a connection error
-      if (err.message.includes('Failed to fetch') || err.message.includes('CONNECTION_REFUSED') || err.name === 'TypeError') {
-        setError('Cannot connect to backend server! Make sure it\'s running on http://localhost:8000. Start it with: uvicorn app.main:app --reload');
-        return;
-      }
-      // If database already has questions, offer to clear and reseed
-      if (err.message.includes('already contains')) {
-        // Clear error immediately before showing confirm
-        setError(null);
-        const shouldClear = confirm(
-          'Database already has questions. Would you like to clear it and reseed with expanded questions?'
-        );
-        if (shouldClear) {
-          try {
-            await api.clearDatabase();
-            await api.seedQuestions();
-            alert('Database cleared and reseeded successfully with all questions!');
-            setError(null); // Clear any errors on success
-          } catch (clearErr) {
-            setError(clearErr.message || 'Failed to clear and reseed database');
-          }
-        }
-        // If user cancels, don't set error (already cleared above)
-      } else {
-        setError(err.message);
-      }
-    } finally {
-      setSeeding(false);
-    }
-  };
+  }, [gradeLevel, subject, user]);
 
   const handleStartQuiz = async (e) => {
     e.preventDefault();
-    if (!studentId.trim()) {
-      setError('Please enter a student ID');
+    if (!user) {
+      navigate('/login');
       return;
     }
 
@@ -82,11 +55,17 @@ function StartQuiz() {
       // Clear any practice markers when starting a new main test
       sessionStorage.removeItem('current_practice_original_attempt');
       
+      if (topics.length === 0) {
+        setError(`No ${subject} topics available for Grade ${gradeLevel}. Please select a different grade or subject.`);
+        setLoading(false);
+        return;
+      }
+
       const response = await api.generateQuiz(
-        studentId.trim(),
         gradeLevel,
-        topics[gradeLevel],
+        topics,
         10
+        // studentId not needed - will use authenticated user's username automatically
       );
       // Store quiz in sessionStorage for TakeQuiz to access
       sessionStorage.setItem(`quiz_${response.quiz_id}`, JSON.stringify(response));
@@ -102,25 +81,15 @@ function StartQuiz() {
     <div className="container">
       <div className="card">
         <h2>Start New Quiz</h2>
-        <p style={{ marginBottom: '20px', color: '#666' }}>
-          Enter your student ID and grade level to begin an adaptive quiz.
-        </p>
+        {user && (
+          <p style={{ marginBottom: '20px', color: '#666' }}>
+            Welcome, <strong>{user.username}</strong>! Select a grade level to begin an adaptive quiz.
+          </p>
+        )}
 
         {error && <div className="error">{error}</div>}
 
         <form onSubmit={handleStartQuiz}>
-          <div className="form-group">
-            <label htmlFor="studentId">Student ID</label>
-            <input
-              id="studentId"
-              type="text"
-              value={studentId}
-              onChange={(e) => setStudentId(e.target.value)}
-              placeholder="Enter your student ID"
-              required
-            />
-          </div>
-
           <div className="form-group">
             <label htmlFor="gradeLevel">Grade Level</label>
             <select
@@ -129,15 +98,49 @@ function StartQuiz() {
               onChange={(e) => setGradeLevel(Number(e.target.value))}
             >
               <option value={3}>Grade 3</option>
+              <option value={4}>Grade 4</option>
               <option value={5}>Grade 5</option>
             </select>
           </div>
 
           <div className="form-group">
-            <label>Topics</label>
-            <div style={{ padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
-              {topics[gradeLevel].join(', ')}
-            </div>
+            <label htmlFor="subject">Subject</label>
+            <select
+              id="subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            >
+              <option value="Math">Math</option>
+              <option value="Reading">Reading</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Available Topics ({subject})</label>
+            {loadingTopics ? (
+              <div style={{ padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
+                Loading topics...
+              </div>
+            ) : topics.length > 0 ? (
+              <div style={{ padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
+                {topics.map((topic, index) => (
+                  <span key={topic} style={{ 
+                    display: 'inline-block', 
+                    margin: '4px 8px 4px 0',
+                    padding: '4px 8px',
+                    background: '#fff',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}>
+                    {topic}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '10px', background: '#fff3cd', borderRadius: '4px', color: '#856404' }}>
+                No {subject} topics available for Grade {gradeLevel}
+              </div>
+            )}
           </div>
 
           <div className="actions">
@@ -147,10 +150,16 @@ function StartQuiz() {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={handleSeed}
-              disabled={seeding}
+              onClick={() => {
+                if (!user || !user.username) {
+                  alert('Please login first before viewing history');
+                  navigate('/login');
+                  return;
+                }
+                navigate(`/history/${user.username}`);
+              }}
             >
-              {seeding ? 'Seeding...' : 'Seed Question Bank'}
+              View Student History
             </button>
           </div>
         </form>

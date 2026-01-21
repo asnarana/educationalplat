@@ -20,22 +20,16 @@ EXPANDED_QUESTIONS = expand_module.EXPANDED_QUESTIONS
 router = APIRouter(prefix="/seed", tags=["seed"])
 
 
-@router.post("", status_code=201)
-def seed_questions(db: Session = Depends(get_db)):
+def auto_seed_questions(db: Session, force: bool = False) -> dict:
     """
-    Seed the database with sample questions for 2 grade levels and 5 topics each.
-    
-    Creates questions for:
-    - Grade 3: Addition, Subtraction, Multiplication, Division, Fractions
-    - Grade 5: Algebra, Geometry, Decimals, Percentages, Word Problems
+    Internal function to seed questions. Returns dict with result.
+    If force=False and questions exist, returns None (doesn't seed).
+    If force=True, seeds even if questions exist.
     """
     # Check if questions already exist
     existing_count = db.query(Question).count()
-    if existing_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Database already contains {existing_count} questions. Use POST /seed/clear to clear the database first, then seed again."
-        )
+    if existing_count > 0 and not force:
+        return None  # Questions exist, don't seed
     
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
@@ -263,26 +257,188 @@ def seed_questions(db: Session = Depends(get_db)):
     }
 
 
+def add_expanded_questions_to_existing_db(db: Session) -> dict:
+    """
+    Add expanded questions to an existing database.
+    Only adds questions that don't already exist.
+    Uses a hash-based approach to avoid CLOB comparison issues in Oracle.
+    """
+    existing_count = db.query(Question).count()
+    new_questions = []
+    
+    # Get all existing questions to check against (load into memory to avoid CLOB comparison)
+    existing_questions = db.query(Question).all()
+    existing_set = set()
+    for q in existing_questions:
+        # Create a unique key from grade_level, topic, and correct_answer
+        # This avoids CLOB comparison issues
+        key = (q.grade_level, q.topic, q.correct_answer, q.prompt)
+        existing_set.add(key)
+    
+    for q_data in EXPANDED_QUESTIONS:
+        # Create the same key for comparison
+        key = (q_data["grade_level"], q_data["topic"], q_data["correct_answer"], q_data["prompt"])
+        
+        if key not in existing_set:
+            question = Question(**q_data)
+            new_questions.append(question)
+    
+    if new_questions:
+        db.add_all(new_questions)
+        db.commit()
+        return {
+            "message": f"Added {len(new_questions)} new expanded questions to existing database",
+            "questions_added": len(new_questions),
+            "previous_count": existing_count,
+            "new_total": existing_count + len(new_questions)
+        }
+    else:
+        return {
+            "message": "All expanded questions already exist in database",
+            "questions_added": 0,
+            "previous_count": existing_count,
+            "new_total": existing_count
+        }
+
+
+@router.post("/add-expanded", status_code=200)
+def add_expanded_questions_endpoint(db: Session = Depends(get_db)):
+    """
+    Add expanded questions to the existing database.
+    Only adds questions that don't already exist.
+    """
+    result = add_expanded_questions_to_existing_db(db)
+    return result
+
+
+@router.post("", status_code=201)
+def seed_questions(db: Session = Depends(get_db)):
+    """
+    Seed the database with sample questions for 2 grade levels and 5 topics each.
+    
+    Creates questions for:
+    - Grade 3: Addition, Subtraction, Multiplication, Division, Fractions
+    - Grade 5: Algebra, Geometry, Decimals, Percentages, Word Problems
+    
+    Note: This endpoint requires the database to be empty. For automatic seeding,
+    questions are seeded on server startup if the database is empty.
+    """
+    # Check if questions already exist
+    existing_count = db.query(Question).count()
+    if existing_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Database already contains {existing_count} questions. Use POST /seed/clear to clear the database first, then seed again."
+        )
+    
+    # Use the auto_seed function
+    result = auto_seed_questions(db, force=True)
+    return result
+
+
 @router.post("/clear", status_code=200)
 def clear_database(db: Session = Depends(get_db)):
     """
-    Clear all data from the database (questions, quizzes, attempts).
+    Clear only questions from the database, preserving student history (quizzes and attempts).
     
-    WARNING: This will delete all data! Use with caution.
+    This allows reseeding the question bank without losing student progress.
+    Note: Quizzes and attempts that reference deleted questions will still exist,
+    but those questions won't be available for new quizzes.
     """
-    from app.models import Attempt, Quiz, Question
+    from app.models import Question
     
     try:
-        # Delete all attempts
-        db.query(Attempt).delete()
-        # Delete all quizzes
-        db.query(Quiz).delete()
-        # Delete all questions
+        # Only delete questions, preserve student history
+        deleted_count = db.query(Question).count()
         db.query(Question).delete()
         db.commit()
         
         return {
-            "message": "Database cleared successfully",
+            "message": f"Successfully cleared {deleted_count} questions from database",
+            "note": "Student history (quizzes and attempts) has been preserved. You can now seed the question bank again with /seed endpoint."
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error clearing questions: {str(e)}")
+
+
+@router.post("/migrate/grade-quiz-numbers", status_code=200)
+def migrate_grade_quiz_numbers(db: Session = Depends(get_db)):
+    """
+    Migrate existing quizzes to have grade_quiz_number set.
+    This adds the column if it doesn't exist, then backfills the grade_quiz_number field for quizzes.
+    
+    Each student+grade combination will have sequential IDs starting from 1.
+    """
+    from app.models import Quiz
+    from app.db import engine
+    from sqlalchemy import text, inspect
+    
+    try:
+        # First, check if the column exists and add it if it doesn't
+        inspector = inspect(engine)
+        columns = [col['name'].upper() for col in inspector.get_columns('quizzes')]
+        
+        if 'GRADE_QUIZ_NUMBER' not in columns:
+            # Add the column
+            with engine.connect() as conn:
+                add_column = text("ALTER TABLE quizzes ADD grade_quiz_number INTEGER")
+                conn.execute(add_column)
+                conn.commit()
+            
+            # Add index for better query performance
+            try:
+                with engine.connect() as conn:
+                    add_index = text("CREATE INDEX idx_quizzes_grade_quiz_number ON quizzes(student_id, grade_level, grade_quiz_number)")
+                    conn.execute(add_index)
+                    conn.commit()
+            except Exception as idx_err:
+                # Index might already exist or fail for other reasons, that's okay
+                print(f"Note: Could not create index (may already exist): {idx_err}")
+        
+        # Now backfill the grade_quiz_number values
+        updated_count = Quiz.backfill_grade_quiz_numbers(db)
+        
+        return {
+            "message": f"Successfully migrated {updated_count} quizzes with grade_quiz_number",
+            "updated_count": updated_count,
+            "column_added": 'GRADE_QUIZ_NUMBER' not in columns if 'GRADE_QUIZ_NUMBER' not in columns else False
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error migrating grade_quiz_numbers: {str(e)}")
+
+
+@router.post("/clear-all", status_code=200)
+def clear_all_database(db: Session = Depends(get_db)):
+    """
+    Clear ALL data from the database (questions, quizzes, attempts).
+    
+    WARNING: This will delete ALL student history! Use with extreme caution.
+    Use /seed/clear instead if you only want to clear questions.
+    """
+    from app.models import Attempt, Quiz, Question
+    
+    try:
+        # Delete all attempts first (due to foreign key constraints)
+        attempts_count = db.query(Attempt).count()
+        db.query(Attempt).delete()
+        # Delete all quizzes
+        quizzes_count = db.query(Quiz).count()
+        db.query(Quiz).delete()
+        # Delete all questions
+        questions_count = db.query(Question).count()
+        db.query(Question).delete()
+        db.commit()
+        
+        return {
+            "message": "Database cleared completely",
+            "deleted": {
+                "attempts": attempts_count,
+                "quizzes": quizzes_count,
+                "questions": questions_count
+            },
+            "warning": "All student history has been deleted!",
             "note": "You can now seed the question bank again with /seed endpoint"
         }
     except Exception as e:
