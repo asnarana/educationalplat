@@ -199,10 +199,43 @@ def generate_quiz(
                 exclude_prompt_keywords=['octopus']  # Still exclude octopus
             )
         
-        # If still not enough, use what we have (shouldn't happen with expanded bank)
+        # If still not enough, pad with any available questions (allow repeats to fill gaps)
         if len(selected_questions) < request.num_questions:
-            # Log a warning but don't fail - use what we have
-            pass
+            print(f"[WARNING] Only got {len(selected_questions)} questions, need {request.num_questions}. Padding with additional questions.")
+            
+            # Get all available questions for this grade and topics
+            all_questions = (
+                db.query(Question)
+                .filter(
+                    Question.grade_level == request.grade_level,
+                    Question.topic.in_(request.topics)
+                )
+                .all()
+            )
+            
+            # Filter out octopus and already selected
+            selected_ids = {q.id for q in selected_questions}
+            available = [
+                q for q in all_questions 
+                if q.id not in selected_ids and 'octopus' not in q.prompt.lower()
+            ]
+            
+            # Shuffle and add until we have enough
+            random.shuffle(available)
+            for q in available:
+                if len(selected_questions) >= request.num_questions:
+                    break
+                selected_questions.append(q)
+            
+            # If STILL not enough, allow actual repeats (shouldn't happen)
+            if len(selected_questions) < request.num_questions:
+                print(f"[WARNING] Still only {len(selected_questions)} questions after padding. Allowing repeats.")
+                random.shuffle(all_questions)
+                for q in all_questions:
+                    if len(selected_questions) >= request.num_questions:
+                        break
+                    if 'octopus' not in q.prompt.lower():
+                        selected_questions.append(q)
         
         # Get next grade-specific quiz number for this student+grade combination
         grade_quiz_number = Quiz.get_next_grade_quiz_number(db, student_id, request.grade_level)

@@ -96,9 +96,46 @@ Questions are randomized using timestamp-based seeding. Retakes show different q
 
 ## Database & Infrastructure
 
-- **Oracle Database**: Auto-creates tables, auto-seeds questions
+- **Oracle Database**: Auto-creates tables, auto-seeds math questions
 - **Redis**: Caches history, mastery status (5 min TTL)
 - **Prometheus & Grafana**: Metrics at `/metrics`, dashboard at `http://localhost:3001`
+
+### Database Setup
+
+1. **Start Oracle DB** (Docker required):
+```bash
+docker-compose up -d oracle-db
+# Wait ~60 seconds for Oracle to initialize
+```
+
+2. **Configure connection** (create `.env` file):
+```
+DB_HOST=localhost
+DB_PORT=1521
+DB_SERVICE=FREEPDB1
+DB_USER=system
+DB_PASSWORD=oracle123
+```
+
+3. **Auto-seed math questions**: Happens automatically on first backend start
+
+4. **Add reading questions** (run once per grade):
+```bash
+# Activate virtual environment first
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Mac/Linux
+
+# Add reading questions for each grade
+python add_reading_questions.py           # Grade 3 (40 questions)
+python add_grade4_reading_questions.py    # Grade 4 (40 questions)
+python add_grade5_reading_questions.py    # Grade 5 (40 questions)
+```
+
+5. **Verify questions**:
+```bash
+# Check question count via API
+curl http://localhost:8000/quiz/topics?grade_level=5&subject=Reading
+```
 
 ## AI Features 
 
@@ -118,9 +155,22 @@ export OLLAMA_MODEL=llama2  # or 'phi'
 ### Text-to-Speech
 Browser TTS (built-in) - click 🔊 button. Reads questions only for reading quizzes.
 
-### Docker
+### Docker Services
 ```bash
-docker-compose up -d  # Starts Oracle DB, Redis, Prometheus, Grafana
+# Start all services
+docker-compose up -d
+
+# Or start individually:
+docker-compose up -d oracle-db    # Oracle Database (port 1521)
+docker-compose up -d redis        # Redis cache (port 6379)
+docker-compose up -d prometheus   # Metrics collection (port 9090)
+docker-compose up -d grafana      # Dashboard (port 3001)
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs oracle-db
 ```
 
 ## Design Decisions
