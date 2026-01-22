@@ -91,6 +91,33 @@ def init_db():
         except Exception as e:
             # Column might already exist or there might be a race condition
             print(f"Note: Could not add grade_quiz_number column (may already exist): {e}")
+    
+    # Check if questions table exists and add image_url column if missing
+    if 'QUESTIONS' in table_names:
+        try:
+            columns = [col['name'].upper() for col in inspector.get_columns('questions')]
+            if 'IMAGE_URL' not in columns:
+                with engine.connect() as conn:
+                    add_column = text("ALTER TABLE questions ADD image_url VARCHAR2(500)")
+                    conn.execute(add_column)
+                    conn.commit()
+                    print("Added image_url column to questions table")
+        except Exception as e:
+            # Column might already exist or there might be a race condition
+            print(f"Note: Could not add image_url column (may already exist): {e}")
+    
+    # Check if questions table exists and add calculator_active column if missing
+    if 'QUESTIONS' in table_names:
+        try:
+            columns = [col['name'].upper() for col in inspector.get_columns('questions')]
+            if 'CALCULATOR_ACTIVE' not in columns:
+                with engine.connect() as conn:
+                    add_column = text("ALTER TABLE questions ADD calculator_active NUMBER(1)")
+                    conn.execute(add_column)
+                    conn.commit()
+                    print("Added calculator_active column to questions table")
+        except Exception as e:
+            print(f"Note: Could not add calculator_active column (may already exist): {e}")
 
 
 def get_db() -> Session:

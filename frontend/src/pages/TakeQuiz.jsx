@@ -595,6 +595,21 @@ function TakeQuiz() {
             <div className="question-header">
               <span>Question {index + 1} of {quiz.questions.length}</span>
               <span className="question-topic">{question.topic}</span>
+              {question.calculator_active !== null && question.calculator_active !== undefined && (
+                <span style={{
+                  backgroundColor: question.calculator_active ? '#28a745' : '#dc3545',
+                  color: 'white',
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  {question.calculator_active ? '🔢 Calculator' : '🚫 No Calculator'}
+                </span>
+              )}
               <span style={{
                 backgroundColor: isHighValue ? '#ffc107' : '#6c757d',
                 color: 'white',
@@ -1288,6 +1303,27 @@ function TakeQuiz() {
                   boxShadow: hasPassage ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
                 }}>
                   {hasPassage ? questionText : question.prompt}
+                  
+                  {/* Display question image if available */}
+                  {question.image_url && (
+                    <div style={{ marginTop: '15px', textAlign: 'center' }}>
+                      <img 
+                        src={`http://localhost:8000${question.image_url}`}
+                        alt="Question diagram"
+                        style={{ 
+                          maxWidth: '100%', 
+                          maxHeight: '400px',
+                          borderRadius: '8px',
+                          border: '1px solid #dee2e6',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                        onError={(e) => {
+                          console.error('Failed to load image:', question.image_url);
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => handlePlayQuestion(hasPassage ? questionText : question.prompt, question.id)}

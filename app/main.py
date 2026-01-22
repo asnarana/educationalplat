@@ -2,8 +2,10 @@
 GradeMaster - Adaptive Remediation Quiz System
 FastAPI main application entry point.
 """
+import os
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.db import init_db
 from app.routes import seed, quiz, history, feedback, tts, auth, admin
 from app.monitoring.middleware import PrometheusMiddleware
@@ -15,6 +17,16 @@ app = FastAPI(
     description="Adaptive remediation quiz system for personalized learning",
     version="1.0.0"
 )
+
+# Mount static files for serving images
+# Get the project root directory
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Mount grade-specific image directories
+for grade in [3, 4, 5]:
+    image_dir = os.path.join(project_root, f"grade{grade}mathimages")
+    if os.path.exists(image_dir):
+        app.mount(f"/static/grade{grade}mathimages", StaticFiles(directory=image_dir), name=f"grade{grade}mathimages")
 
 # Prometheus middleware (must be added before CORS)
 app.add_middleware(PrometheusMiddleware)

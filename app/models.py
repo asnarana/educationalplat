@@ -87,6 +87,8 @@ class Question(Base):
     choices = Column(JSONType, nullable=True)  # Optional list of choices (JSON stored as Text)
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text, nullable=True)
+    image_url = Column(String(500), nullable=True)  # Optional image URL for questions with diagrams
+    calculator_active = Column(Boolean, nullable=True, default=None)  # True = calculator allowed, False = no calculator, None = not specified
 
     def to_dict(self, include_answer: bool = False) -> dict:
         """Convert question to dictionary, optionally excluding correct answer."""
@@ -99,6 +101,8 @@ class Question(Base):
             "prompt": self.prompt,
             "choices": self.choices,
             "explanation": self.explanation if include_answer else None,
+            "image_url": self.image_url,
+            "calculator_active": self.calculator_active,
         }
         if include_answer:
             result["correct_answer"] = self.correct_answer

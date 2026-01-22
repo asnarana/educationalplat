@@ -43,7 +43,8 @@ def get_topics(
         # Math topics: Addition, Subtraction, Multiplication, Division, Fractions, Algebra, Geometry, etc.
         # Reading topics: Vocabulary, Reading Comprehension, Character Analysis, Main Idea, etc.
         math_keywords = ['addition', 'subtraction', 'multiplication', 'division', 'fraction', 
-                        'algebra', 'geometry', 'decimal', 'percentage', 'word problem']
+                        'algebra', 'geometry', 'decimal', 'percentage', 'word problem',
+                        'measurement', 'operations', 'number operations']
         reading_keywords = ['vocabulary', 'reading', 'comprehension', 'character', 'main idea', 
                            'text structure', 'inference', 'word meaning']
         

@@ -241,8 +241,22 @@ def auto_seed_questions(db: Session, force: bool = False) -> dict:
         },
     ]
     
-    # Automatically include expanded questions
-    questions_data.extend(EXPANDED_QUESTIONS)
+    # Old-style Grade 3 Math topics that have been replaced with EOG questions
+    # Skip these since we now use NC EOG Released Form questions for Grade 3 Math
+    SKIP_GRADE3_MATH_TOPICS = {'addition', 'subtraction', 'multiplication', 'division'}
+    
+    # Filter out old-style Grade 3 Math questions from base questions_data
+    questions_data = [
+        q for q in questions_data 
+        if not (q["grade_level"] == 3 and q["topic"].lower() in SKIP_GRADE3_MATH_TOPICS)
+    ]
+    
+    # Also filter expanded questions
+    filtered_expanded = [
+        q for q in EXPANDED_QUESTIONS 
+        if not (q["grade_level"] == 3 and q["topic"].lower() in SKIP_GRADE3_MATH_TOPICS)
+    ]
+    questions_data.extend(filtered_expanded)
     
     questions = [Question(**q_data) for q_data in questions_data]
     db.add_all(questions)
@@ -253,7 +267,8 @@ def auto_seed_questions(db: Session, force: bool = False) -> dict:
         "questions_created": len(questions),
         "grade_levels": [3, 5],
         "topics_per_grade": 5,
-        "includes_expanded": True
+        "includes_expanded": True,
+        "note": "Grade 3 Math uses EOG questions - run replace_grade3_math.py separately"
     }
 
 
@@ -262,9 +277,17 @@ def add_expanded_questions_to_existing_db(db: Session) -> dict:
     Add expanded questions to an existing database.
     Only adds questions that don't already exist.
     Uses a hash-based approach to avoid CLOB comparison issues in Oracle.
+    
+    Note: Skips Grade 3 Math questions with old-style topics (Addition, Subtraction, etc.)
+    since these have been replaced with NC EOG Released Form questions.
     """
+    # Old-style Grade 3 Math topics that have been replaced with EOG questions
+    # Skip these to avoid re-adding old questions
+    SKIP_GRADE3_MATH_TOPICS = {'addition', 'subtraction', 'multiplication', 'division'}
+    
     existing_count = db.query(Question).count()
     new_questions = []
+    skipped_grade3_math = 0
     
     # Get all existing questions to check against (load into memory to avoid CLOB comparison)
     existing_questions = db.query(Question).all()
@@ -276,6 +299,11 @@ def add_expanded_questions_to_existing_db(db: Session) -> dict:
         existing_set.add(key)
     
     for q_data in EXPANDED_QUESTIONS:
+        # Skip old-style Grade 3 Math questions (replaced with EOG questions)
+        if q_data["grade_level"] == 3 and q_data["topic"].lower() in SKIP_GRADE3_MATH_TOPICS:
+            skipped_grade3_math += 1
+            continue
+        
         # Create the same key for comparison
         key = (q_data["grade_level"], q_data["topic"], q_data["correct_answer"], q_data["prompt"])
         
