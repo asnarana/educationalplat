@@ -420,8 +420,8 @@ GRADE3_MATH_QUESTIONS = [
         "topic": "Measurement",
         "difficulty": 1,
         "prompt": "This shows a pencil and a ruler. What is the length of the pencil?",
-        "choices": ["5 1/2 inches", "6 inches", "6 1/4 inches", "6 1/2 inches"],
-        "correct_answer": "6 1/4 inches",
+        "choices": ["5 and 1/2 inches", "6 inches", "6 and 1/4 inches", "6 and 1/2 inches"],
+        "correct_answer": "6 and 1/4 inches",
         "explanation": "Reading the ruler, the pencil measures 6 and 1/4 inches."
     },
     # Q39 - NC.3.OA.8 - Operations - NO IMAGE

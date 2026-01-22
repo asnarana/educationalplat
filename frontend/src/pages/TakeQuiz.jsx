@@ -1087,8 +1087,8 @@ function TakeQuiz() {
               
               if (isBothParts && displayParts.length >= 2) {
                 // Ensure both parts have titles with proper Part labels
-                const part1Title = displayTitles[0];
-                const part2Title = displayTitles[1];
+                let part1Title = displayTitles[0];
+                let part2Title = displayTitles[1];
                 
                 // Helper to extract base title (without Part label)
                 const getBaseTitle = (title) => {
@@ -1096,6 +1096,40 @@ function TakeQuiz() {
                   // Remove Part label if present (can be on same line or separate line)
                   return title.replace(/\n?\(Part\s+[12]\)/gi, '').trim();
                 };
+                
+                // Helper to check if a "title" is actually passage content (not a real title)
+                // Real titles are short, often have "by Author", and don't look like sentences
+                const isPassageContent = (title) => {
+                  if (!title) return false;
+                  const firstLine = title.split('\n')[0].toLowerCase();
+                  // Check if it looks like story content (starts with action verbs, character actions, etc.)
+                  const contentPatterns = [
+                    /^red pecked/i,           // Great Escape Part 2
+                    /^i like to write/i,      // Under My Nose Part 2
+                    /^jerry muskrat/i,        // Grandfather Frog Part 2
+                    /^the beavers build/i,    // Beavers Part 2
+                    /^the rescue team/i,      // Dog Hero Part 2
+                    /^milkmaids and/i,        // Great Escape Part 2
+                    /^walking straight/i,     // Great Escape Part 2
+                    /^the sheep/i,            // Great Escape Part 2
+                    /^one morning/i,          // Story content
+                    /^he opened/i,            // Story content
+                    /^chickens ran/i,         // Story content
+                  ];
+                  // Also check: if title is longer than 100 chars without "by", it's likely content
+                  const isLongWithoutAuthor = title.length > 100 && !title.toLowerCase().includes('\nby ');
+                  return contentPatterns.some(p => p.test(firstLine)) || isLongWithoutAuthor;
+                };
+                
+                // Check if titles are actually passage content (misdetected)
+                if (isPassageContent(part1Title)) {
+                  part1Title = null;
+                  displayTitles[0] = null;
+                }
+                if (isPassageContent(part2Title)) {
+                  part2Title = null;
+                  displayTitles[1] = null;
+                }
                 
                 // If Part 1 has a title but Part 2 doesn't
                 if (part1Title && !part2Title) {
@@ -1125,7 +1159,7 @@ function TakeQuiz() {
                 // If neither has a title, try to extract from the first part
                 else if (!part1Title && !part2Title && originalParts.length >= 2) {
                   const extractedTitle = extractPassageTitle(originalParts[0], 0);
-                  if (extractedTitle) {
+                  if (extractedTitle && !isPassageContent(extractedTitle)) {
                     const baseTitle = getBaseTitle(extractedTitle);
                     displayTitles[0] = `${baseTitle}\n(Part 1)`;
                     displayTitles[1] = `${baseTitle}\n(Part 2)`;
