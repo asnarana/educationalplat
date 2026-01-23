@@ -1392,13 +1392,36 @@ function TakeQuiz() {
                 ))}
               </ul>
             ) : (
-              <input
-                type="text"
-                value={answers[question.id] || ''}
-                onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                placeholder="Enter your answer"
-                style={{ width: '100%', padding: '10px', fontSize: '16px' }}
-              />
+              <div style={{ marginTop: '15px' }}>
+                <label style={{ 
+                  display: 'block', 
+                  marginBottom: '8px', 
+                  fontWeight: 'bold',
+                  color: '#495057'
+                }}>
+                  📝 Type your answer:
+                </label>
+                <input
+                  type="text"
+                  value={answers[question.id] || ''}
+                  onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                  placeholder="Enter your answer (e.g., 25, 3/4, 1.5)"
+                  style={{ 
+                    width: '100%', 
+                    padding: '15px', 
+                    fontSize: '18px',
+                    border: '2px solid #007bff',
+                    borderRadius: '8px',
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#0056b3'}
+                  onBlur={(e) => e.target.style.borderColor = '#007bff'}
+                />
+                <small style={{ color: '#6c757d', marginTop: '5px', display: 'block' }}>
+                  For fractions, use format like 1/2 or 3/4. For decimals, use format like 1.36
+                </small>
+              </div>
             )}
           </div>
           );

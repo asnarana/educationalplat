@@ -215,123 +215,124 @@ GRADE5_MATH_EOG_QUESTIONS = [
         "calculator_active": False,
         "image_url": None
     },
-    # Q16 - NC.5.NBT.5 - Number Operations - HAS IMAGE (grid response)
+    # ===== FREE RESPONSE QUESTIONS (Q16-Q25) =====
+    # Q16 - NC.5.NBT.5 - Number Operations - FREE RESPONSE
     {
         "question_num": 16,
         "topic": "Number Operations",
         "difficulty": 2,
-        "prompt": "A business has 384 cases of water. There are 42 bottles of water in each case. How many bottles of water does the business have?",
-        "choices": ["15,128", "16,128", "16,228", "17,128"],
-        "correct_answer": "16,128",
+        "prompt": "A business has 384 cases of water. There are 42 bottles of water in each case. How many bottles of water does the business have?\n\n(Type your answer as a number)",
+        "choices": None,  # FREE RESPONSE
+        "correct_answer": "16128",
         "explanation": "384 × 42 = 16,128 bottles.",
         "calculator_active": False,
         "image_url": "/static/grade5mathimages/q16.png"
     },
-    # Q17 - NC.5.NBT.6 - Number Operations - HAS IMAGE (grid response)
+    # Q17 - NC.5.NBT.6 - Number Operations - FREE RESPONSE
     {
         "question_num": 17,
         "topic": "Number Operations",
         "difficulty": 2,
-        "prompt": "A rope that is 6 meters long will be cut into 24 pieces that are all of the same length. What will be the length of each piece, in centimeters?\n\n(Note: 100 centimeters = 1 meter)",
-        "choices": ["20 cm", "25 cm", "30 cm", "35 cm"],
-        "correct_answer": "25 cm",
+        "prompt": "A rope that is 6 meters long will be cut into 24 pieces that are all of the same length. What will be the length of each piece, in centimeters?\n\n(Note: 100 centimeters = 1 meter)\n(Type your answer as a number)",
+        "choices": None,  # FREE RESPONSE
+        "correct_answer": "25",
         "explanation": "6 meters = 600 cm. 600 ÷ 24 = 25 cm per piece.",
         "calculator_active": False,
         "image_url": "/static/grade5mathimages/q17.png"
     },
-    # Q18 - NC.5.NF.1 - Fractions - HAS IMAGE (grid response)
+    # Q18 - NC.5.NF.1 - Fractions - FREE RESPONSE
     {
         "question_num": 18,
         "topic": "Fractions",
         "difficulty": 1,
-        "prompt": "Wayne exercised for 5/6 of an hour in the morning and 1/3 of an hour in the evening. How much more of an hour did Wayne spend exercising in the morning than in the evening?",
-        "choices": ["1/6", "1/3", "1/2", "2/3"],
+        "prompt": "Wayne exercised for 5/6 of an hour in the morning and 1/3 of an hour in the evening. How much more of an hour did Wayne spend exercising in the morning than in the evening?\n\n(Type your answer as a fraction like 1/2)",
+        "choices": None,  # FREE RESPONSE
         "correct_answer": "1/2",
         "explanation": "5/6 - 1/3 = 5/6 - 2/6 = 3/6 = 1/2 hour more.",
         "calculator_active": False,
         "image_url": "/static/grade5mathimages/q18.png"
     },
-    # Q19 - NC.5.NF.4 - Fractions - HAS IMAGE
+    # Q19 - NC.5.NF.4 - Fractions - FREE RESPONSE
     {
         "question_num": 19,
         "topic": "Fractions",
         "difficulty": 2,
-        "prompt": "What is the area of the square, in square units? (The square has a side length of 3/4 unit.)",
-        "choices": ["3/8", "6/16", "9/16", "3/4"],
+        "prompt": "What is the area of the square, in square units? (The square has a side length of 3/4 unit.)\n\n(Type your answer as a fraction like 9/16)",
+        "choices": None,  # FREE RESPONSE
         "correct_answer": "9/16",
         "explanation": "Area = side × side = (3/4) × (3/4) = 9/16 square units.",
         "calculator_active": False,
         "image_url": "/static/grade5mathimages/q19.png"
     },
-    # Q20 - NC.5.NBT.5 - Number Operations - HAS IMAGE (grid response)
+    # Q20 - NC.5.NBT.5 - Number Operations - FREE RESPONSE
     {
         "question_num": 20,
         "topic": "Number Operations",
         "difficulty": 2,
-        "prompt": "A factory delivered 284 boxes of books to stores. There are 20 books in each box. How many books did the factory deliver?",
-        "choices": ["5,480", "5,680", "5,880", "6,080"],
-        "correct_answer": "5,680",
+        "prompt": "A factory delivered 284 boxes of books to stores. There are 20 books in each box. How many books did the factory deliver?\n\n(Type your answer as a number)",
+        "choices": None,  # FREE RESPONSE
+        "correct_answer": "5680",
         "explanation": "284 × 20 = 5,680 books.",
         "calculator_active": False,
         "image_url": "/static/grade5mathimages/q20.png"
     },
     # ===== CALCULATOR ACTIVE (Q21-40) =====
-    # Q21 - NC.5.MD.5 - Measurement - HAS IMAGE
+    # Q21 - NC.5.MD.5 - Measurement - FREE RESPONSE
     {
         "question_num": 21,
         "topic": "Measurement",
         "difficulty": 2,
-        "prompt": "What is the volume of the figure, in cubic centimeters?",
-        "choices": ["196 cubic cm", "210 cubic cm", "224 cubic cm", "238 cubic cm"],
-        "correct_answer": "224 cubic cm",
+        "prompt": "What is the volume of the figure, in cubic centimeters?\n\n(Type your answer as a number)",
+        "choices": None,  # FREE RESPONSE
+        "correct_answer": "224",
         "explanation": "The L-shaped figure can be split into two rectangular prisms. Total volume = 224 cubic cm.",
         "calculator_active": True,
         "image_url": "/static/grade5mathimages/q21.png"
     },
-    # Q22 - NC.5.NBT.5 - Number Operations - HAS IMAGE (grid response)
+    # Q22 - NC.5.NBT.5 - Number Operations - FREE RESPONSE
     {
         "question_num": 22,
         "topic": "Number Operations",
         "difficulty": 2,
-        "prompt": "A school has 45 classrooms. There are 27 students in each classroom. How many students are in all 45 classrooms?",
-        "choices": ["1,115", "1,215", "1,315", "1,415"],
-        "correct_answer": "1,215",
+        "prompt": "A school has 45 classrooms. There are 27 students in each classroom. How many students are in all 45 classrooms?\n\n(Type your answer as a number)",
+        "choices": None,  # FREE RESPONSE
+        "correct_answer": "1215",
         "explanation": "45 × 27 = 1,215 students.",
         "calculator_active": True,
         "image_url": "/static/grade5mathimages/q22.png"
     },
-    # Q23 - NC.5.NBT.7 - Number Operations - HAS IMAGE
+    # Q23 - NC.5.NBT.7 - Number Operations - FREE RESPONSE
     {
         "question_num": 23,
         "topic": "Number Operations",
         "difficulty": 2,
-        "prompt": "Each large square has a value of one. What is the value of the shaded parts of the large squares?",
-        "choices": ["1.26", "1.36", "1.46", "1.56"],
+        "prompt": "Each large square has a value of one. What is the value of the shaded parts of the large squares?\n\n(Type your answer as a decimal like 1.36)",
+        "choices": None,  # FREE RESPONSE
         "correct_answer": "1.36",
         "explanation": "Counting the shaded parts gives a total value of 1.36.",
         "calculator_active": True,
         "image_url": "/static/grade5mathimages/q23.png"
     },
-    # Q24 - NC.5.NF.7 - Fractions - HAS IMAGE (grid response)
+    # Q24 - NC.5.NF.7 - Fractions - FREE RESPONSE
     {
         "question_num": 24,
         "topic": "Fractions",
         "difficulty": 2,
-        "prompt": "Eight gardeners equally share 1/2 of a pile of pine needles. What fraction of the pile does each gardener receive?",
-        "choices": ["1/4", "1/8", "1/16", "1/32"],
+        "prompt": "Eight gardeners equally share 1/2 of a pile of pine needles. What fraction of the pile does each gardener receive?\n\n(Type your answer as a fraction like 1/16)",
+        "choices": None,  # FREE RESPONSE
         "correct_answer": "1/16",
         "explanation": "(1/2) ÷ 8 = 1/2 × 1/8 = 1/16 of the pile.",
         "calculator_active": True,
         "image_url": "/static/grade5mathimages/q24.png"
     },
-    # Q25 - NC.5.MD.5 - Measurement - HAS IMAGE
+    # Q25 - NC.5.MD.5 - Measurement - FREE RESPONSE
     {
         "question_num": 25,
         "topic": "Measurement",
         "difficulty": 1,
-        "prompt": "What is the volume of the rectangular prism, in cubic cm? (Dimensions: 12 cm × 4 cm × 9 cm)",
-        "choices": ["332 cubic cm", "432 cubic cm", "532 cubic cm", "632 cubic cm"],
-        "correct_answer": "432 cubic cm",
+        "prompt": "What is the volume of the rectangular prism, in cubic cm? (Dimensions: 12 cm × 4 cm × 9 cm)\n\n(Type your answer as a number)",
+        "choices": None,  # FREE RESPONSE
+        "correct_answer": "432",
         "explanation": "Volume = length × width × height = 12 × 4 × 9 = 432 cubic cm.",
         "calculator_active": True,
         "image_url": "/static/grade5mathimages/q25.png"

@@ -21,7 +21,31 @@ def grade_question(student_answer: str, correct_answer: str) -> int:
     student_normalized = str(student_answer).strip().lower()
     correct_normalized = str(correct_answer).strip().lower()
     
-    return 1 if student_normalized == correct_normalized else 0
+    # Direct match
+    if student_normalized == correct_normalized:
+        return 1
+    
+    # Try numeric comparison for free response answers
+    try:
+        # Handle fractions (e.g., "1/2" -> 0.5)
+        def parse_number(s):
+            s = s.strip()
+            if '/' in s:
+                parts = s.split('/')
+                if len(parts) == 2:
+                    return float(parts[0]) / float(parts[1])
+            return float(s)
+        
+        student_val = parse_number(student_normalized)
+        correct_val = parse_number(correct_normalized)
+        
+        # Compare with small tolerance for floating point
+        if abs(student_val - correct_val) < 0.0001:
+            return 1
+    except (ValueError, ZeroDivisionError):
+        pass  # Not a number, use string comparison only
+    
+    return 0
 
 
 def compute_topic_metrics(
