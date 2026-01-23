@@ -98,6 +98,8 @@ class SubmissionResponse(BaseModel):
     mastery_status: Dict[str, Any]
     next_quiz_recommendation: Optional[Dict] = None
     next_grade_level: Optional[int] = None  # Next grade level available if current grade is mastered
+    question_review: Optional[List[Dict]] = None  # Full question review with answers
+    grade_level: Optional[int] = None  # Grade level for the quiz
 
 
 @router.post("/generate", response_model=QuizResponse)
@@ -740,6 +742,48 @@ def submit_quiz(
                 "weak_topics": weak_topics
             }
         
+        # Build question_review for immediate display on results page
+        question_review = []
+        question_map = {q.id: q for q in questions}
+        for q_id in quiz.question_ids:
+            q = question_map.get(q_id)
+            if q:
+                user_answer = answers_int_keys.get(q_id, "")
+                user_normalized = str(user_answer).strip().lower() if user_answer else ""
+                correct_normalized = str(q.correct_answer).strip().lower()
+                is_correct = user_normalized == correct_normalized
+                
+                # Also check numeric equivalence for free response
+                if not is_correct and user_answer:
+                    try:
+                        def parse_number(s):
+                            s = str(s).strip()
+                            if '/' in s:
+                                parts = s.split('/')
+                                if len(parts) == 2:
+                                    return float(parts[0]) / float(parts[1])
+                            return float(s)
+                        user_val = parse_number(user_normalized)
+                        correct_val = parse_number(correct_normalized)
+                        if abs(user_val - correct_val) < 0.0001:
+                            is_correct = True
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                
+                question_review.append({
+                    "question_id": q.id,
+                    "topic": q.topic,
+                    "prompt": q.prompt,
+                    "choices": q.choices,
+                    "user_answer": user_answer,
+                    "correct_answer": q.correct_answer,
+                    "is_correct": is_correct,
+                    "explanation": q.explanation,
+                    "image_url": q.image_url,
+                    "calculator_active": getattr(q, 'calculator_active', False),
+                    "weight": q.weight
+                })
+        
         return SubmissionResponse(
             attempt_id=attempt.id,
             quiz_id=quiz_id,
@@ -749,7 +793,9 @@ def submit_quiz(
             passed=passed,
             mastery_status=mastery_status,
             next_quiz_recommendation=next_quiz_recommendation,
-            next_grade_level=next_grade_level  # Available next grade level if mastered
+            next_grade_level=next_grade_level,  # Available next grade level if mastered
+            question_review=question_review,  # Include question review for immediate display
+            grade_level=quiz.grade_level  # Include grade level
         )
     except HTTPException:
         raise
@@ -829,6 +875,53 @@ def get_attempt_results(
             "weak_topics": attempt.weak_topics
         }
     
+    # Build question review data (question details + user answer + correct/incorrect)
+    question_review = []
+    if questions and attempt.answers:
+        # Create question lookup by ID
+        question_map = {q.id: q for q in questions}
+        
+        # Build review for each question in quiz order
+        for q_id in unique_question_ids:
+            q = question_map.get(q_id)
+            if q:
+                user_answer = attempt.answers.get(str(q_id), attempt.answers.get(q_id, ""))
+                # Normalize answers for comparison
+                user_normalized = str(user_answer).strip().lower() if user_answer else ""
+                correct_normalized = str(q.correct_answer).strip().lower()
+                is_correct = user_normalized == correct_normalized
+                
+                # Also check numeric equivalence for free response
+                if not is_correct and user_answer:
+                    try:
+                        def parse_number(s):
+                            s = str(s).strip()
+                            if '/' in s:
+                                parts = s.split('/')
+                                if len(parts) == 2:
+                                    return float(parts[0]) / float(parts[1])
+                            return float(s)
+                        user_val = parse_number(user_normalized)
+                        correct_val = parse_number(correct_normalized)
+                        if abs(user_val - correct_val) < 0.0001:
+                            is_correct = True
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                
+                question_review.append({
+                    "question_id": q.id,
+                    "topic": q.topic,
+                    "prompt": q.prompt,
+                    "choices": q.choices,
+                    "user_answer": user_answer,
+                    "correct_answer": q.correct_answer,
+                    "is_correct": is_correct,
+                    "explanation": q.explanation,
+                    "image_url": q.image_url,
+                    "calculator_active": getattr(q, 'calculator_active', False),
+                    "weight": q.weight
+                })
+    
     return {
         "attempt_id": attempt.id,
         "quiz_id": quiz.id,
@@ -842,6 +935,7 @@ def get_attempt_results(
         "next_quiz_recommendation": next_quiz_recommendation,
         "next_grade_level": next_grade_level,
         "is_practice_quiz": is_practice_quiz,
-        "practice_topic": practice_topic
+        "practice_topic": practice_topic,
+        "question_review": question_review  # NEW: Full question review with answers
     }
 

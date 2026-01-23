@@ -15,6 +15,7 @@ function QuizResults() {
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState(null);
   const [playingAudio, setPlayingAudio] = useState(null);
+  const [showQuestionReview, setShowQuestionReview] = useState(false);
 
   useEffect(() => {
     loadResults();
@@ -33,30 +34,32 @@ function QuizResults() {
 
   const loadResults = async () => {
     try {
+      // Get user from storage (authenticated user)
+      const currentUser = api.getCurrentUserFromStorage();
+      setUser(currentUser);
+      
       // First try to get results from sessionStorage (stored when quiz was submitted)
       const storedResults = sessionStorage.getItem(`attempt_${attemptId}`);
-      if (storedResults) {
-        const data = JSON.parse(storedResults);
-        setResults(data);
-        // Get user from storage (authenticated user)
-        const currentUser = api.getCurrentUserFromStorage();
-        setUser(currentUser);
-        setGradeLevel(data.grade_level || data.next_quiz_recommendation?.grade_level);
-      } else {
-        // If not in sessionStorage, fetch from backend (e.g., when clicking from history)
+      let data = storedResults ? JSON.parse(storedResults) : null;
+      
+      // If no data in storage, OR if data doesn't have question_review (old format), fetch from backend
+      if (!data || !data.question_review) {
         try {
-          const data = await api.getAttemptResults(attemptId);
-          setResults(data);
-          // Get user from storage (authenticated user)
-          const currentUser = api.getCurrentUserFromStorage();
-          setUser(currentUser);
-          setGradeLevel(data.grade_level || data.next_quiz_recommendation?.grade_level);
-          // Store in sessionStorage for future use
+          const freshData = await api.getAttemptResults(attemptId);
+          data = freshData;
+          // Update sessionStorage with fresh data that includes question_review
           sessionStorage.setItem(`attempt_${attemptId}`, JSON.stringify(data));
         } catch (fetchErr) {
-          setError('Results not found. Please submit a quiz first.');
+          // If fetch fails but we have cached data, use it (just won't have question_review)
+          if (!data) {
+            setError('Results not found. Please submit a quiz first.');
+            return;
+          }
         }
       }
+      
+      setResults(data);
+      setGradeLevel(data.grade_level || data.next_quiz_recommendation?.grade_level);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -365,6 +368,203 @@ function QuizResults() {
             );
           })}
         </div>
+
+        {/* Question Review Section */}
+        {results.question_review && results.question_review.length > 0 && (
+          <div style={{ marginTop: '30px' }}>
+            <button
+              onClick={() => setShowQuestionReview(!showQuestionReview)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '15px 20px',
+                backgroundColor: '#f8f9fa',
+                border: '2px solid #dee2e6',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left',
+                fontSize: '16px',
+                fontWeight: 'bold'
+              }}
+            >
+              <span style={{ fontSize: '20px' }}>{showQuestionReview ? '📖' : '📋'}</span>
+              <span>{showQuestionReview ? 'Hide' : 'Review'} Questions ({results.question_review.filter(q => q.is_correct).length}/{results.question_review.length} correct)</span>
+              <span style={{ marginLeft: 'auto' }}>{showQuestionReview ? '▲' : '▼'}</span>
+            </button>
+            
+            {showQuestionReview && (
+              <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {results.question_review.map((q, idx) => (
+                  <div 
+                    key={q.question_id}
+                    style={{
+                      padding: '20px',
+                      borderRadius: '10px',
+                      border: `2px solid ${q.is_correct ? '#28a745' : '#dc3545'}`,
+                      backgroundColor: q.is_correct ? '#f0fff4' : '#fff5f5'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ 
+                          fontSize: '24px',
+                          fontWeight: 'bold',
+                          color: q.is_correct ? '#28a745' : '#dc3545'
+                        }}>
+                          {q.is_correct ? '✓' : '✗'}
+                        </span>
+                        <span style={{ 
+                          fontWeight: 'bold',
+                          fontSize: '14px',
+                          backgroundColor: '#e9ecef',
+                          padding: '4px 10px',
+                          borderRadius: '20px'
+                        }}>
+                          Q{idx + 1}
+                        </span>
+                        <span style={{ 
+                          fontSize: '13px',
+                          color: '#6c757d',
+                          backgroundColor: '#f8f9fa',
+                          padding: '4px 10px',
+                          borderRadius: '4px'
+                        }}>
+                          {q.topic}
+                        </span>
+                        {q.calculator_active !== undefined && (
+                          <span style={{
+                            fontSize: '12px',
+                            backgroundColor: q.calculator_active ? '#d4edda' : '#f8d7da',
+                            color: q.calculator_active ? '#155724' : '#721c24',
+                            padding: '3px 8px',
+                            borderRadius: '4px'
+                          }}>
+                            {q.calculator_active ? '🔢 Calculator' : '🚫 No Calc'}
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ 
+                        fontSize: '13px',
+                        color: '#6c757d'
+                      }}>
+                        {q.weight} pts
+                      </span>
+                    </div>
+                    
+                    {/* Question Image */}
+                    {q.image_url && (
+                      <div style={{ marginBottom: '15px', textAlign: 'center' }}>
+                        <img
+                          src={`http://localhost:8000${q.image_url}`}
+                          alt="Question diagram"
+                          style={{
+                            maxWidth: '100%',
+                            maxHeight: '300px',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6'
+                          }}
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Question Prompt */}
+                    <div style={{ 
+                      marginBottom: '15px',
+                      fontSize: '15px',
+                      lineHeight: '1.6',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {q.prompt}
+                    </div>
+                    
+                    {/* Choices (for MCQ) or Free Response indicator */}
+                    {q.choices && q.choices.length > 0 ? (
+                      <div style={{ marginBottom: '15px' }}>
+                        {q.choices.map((choice, cIdx) => {
+                          const isUserChoice = q.user_answer === choice;
+                          const isCorrectChoice = q.correct_answer === choice;
+                          
+                          let bgColor = '#f8f9fa';
+                          let borderColor = '#dee2e6';
+                          let textColor = '#495057';
+                          
+                          if (isCorrectChoice) {
+                            bgColor = '#d4edda';
+                            borderColor = '#28a745';
+                            textColor = '#155724';
+                          }
+                          if (isUserChoice && !isCorrectChoice) {
+                            bgColor = '#f8d7da';
+                            borderColor = '#dc3545';
+                            textColor = '#721c24';
+                          }
+                          
+                          return (
+                            <div
+                              key={cIdx}
+                              style={{
+                                padding: '10px 15px',
+                                marginBottom: '8px',
+                                borderRadius: '6px',
+                                border: `2px solid ${borderColor}`,
+                                backgroundColor: bgColor,
+                                color: textColor,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px'
+                              }}
+                            >
+                              {isUserChoice && <span style={{ fontWeight: 'bold' }}>👤</span>}
+                              {isCorrectChoice && <span style={{ fontWeight: 'bold' }}>✓</span>}
+                              <span>{choice}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: '15px' }}>
+                        <div style={{ 
+                          padding: '10px 15px',
+                          borderRadius: '6px',
+                          border: `2px solid ${q.is_correct ? '#28a745' : '#dc3545'}`,
+                          backgroundColor: q.is_correct ? '#d4edda' : '#f8d7da',
+                          marginBottom: '8px'
+                        }}>
+                          <strong>Your Answer:</strong> {q.user_answer || '(no answer)'}
+                        </div>
+                        {!q.is_correct && (
+                          <div style={{ 
+                            padding: '10px 15px',
+                            borderRadius: '6px',
+                            border: '2px solid #28a745',
+                            backgroundColor: '#d4edda'
+                          }}>
+                            <strong>Correct Answer:</strong> {q.correct_answer}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Explanation */}
+                    {q.explanation && (
+                      <div style={{
+                        padding: '12px 15px',
+                        backgroundColor: '#e7f3ff',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        color: '#004085'
+                      }}>
+                        <strong>📝 Explanation:</strong> {q.explanation}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {weakTopics.length > 0 && !isPracticeQuiz && (
           <div className="weak-topics-list">
