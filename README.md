@@ -1,183 +1,173 @@
-# Adaptive Quiz System
+# EOG Quiz Preparation System
 
-A quiz app that identifies weak topics and provides targeted practice. Built with FastAPI and React. Supports Grade 3-5 Math and Reading with 300+ EOG questions.
+Adaptive quiz application for Grade 3-5 Mathematics and Reading. Identifies weak topics and provides targeted practice using semantic search and AI-powered recommendations.
+
+## Recent Updates
+
+- **Vector Database**: ChromaDB integration for semantic question similarity
+- **Question Review**: Enhanced results with detailed feedback and similar problems
+- **Image Support**: Visual elements for mathematics questions
+- **Expanded Question Bank**: Additional questions across all grades
+- **Free Response**: Grade 5 Mathematics open-ended questions
+- **Improved Persistence**: Enhanced question storage and retrieval
 
 ## Features
 
-- **Multi-grade & Subject Support**: Grade 3, 4, 5 | Math & Reading
-- **Adaptive Quizzes**: 10 questions evenly distributed across topics
-- **Reading Comprehension**: Full passages with proper formatting (titles, authors, paragraph numbers)
-- **Practice Mode**: Focus on weak topics (<80% score)
-- **Randomized Questions**: No duplicates within same quiz
-- **Progress Tracking**: Mastery = 2 perfect quizzes in a row
-- **History & Analytics**: Paginated history, filterable by grade
-- **Admin Dashboard**: View all students' statistics
+- **Multi-grade Support**: Grades 3-5, Math & Reading
+- **Adaptive Quizzes**: 10 questions, balanced topic distribution
+- **Targeted Practice**: Focus on weak topics (<80% score)
+- **Question Review**: Detailed analysis with similar problems
+- **Progress Tracking**: Mastery metrics and history
+- **Semantic Search**: AI-powered question recommendations
+- **Admin Dashboard**: Student statistics and analytics
 - **AI Feedback**: Optional personalized tips (requires Ollama)
 
 ## Quick Start
 
-### Backend
 ```bash
+# Backend
 python -m venv venv
 venv\Scripts\activate  # Windows
 source venv/bin/activate  # Mac/Linux
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-```
 
-### Frontend
-```bash
+# Frontend
 cd frontend
 npm install
 npm run dev
 ```
 
-Access at `http://localhost:5173`. Database auto-seeds 300+ questions on first run.
+Access at `http://localhost:5173`
 
-## Project Structure
+## Architecture
 
-```
-educationalplat/
-├── app/                    # FastAPI backend
-│   ├── logic/             # adaptive.py, scoring.py, llm_provider.py
-│   └── routes/            # quiz.py, auth.py, admin.py, etc.
-├── frontend/              # React frontend
-│   └── src/pages/         # Login, StartQuiz, TakeQuiz, QuizResults, etc.
-├── add_*_reading_questions.py  # Scripts to add/update reading questions
-└── docker-compose.yml     # Oracle DB, Redis, Prometheus, Grafana
-```
+**Backend: FastAPI**
+- High-performance async framework for API endpoints
+- Automatic OpenAPI documentation
+- Type hints for better code reliability
 
-## Key Components
+**Database Stack:**
+- **Oracle DB**: Primary storage for questions, users, quiz attempts
+- **Redis**: 5-minute TTL cache for history and mastery status
+- **ChromaDB**: Vector embeddings for semantic question similarity
 
-**Backend:**
-- `adaptive.py`: Question selection with balanced distribution, randomization, no duplicates
-- `scoring.py`: Grading and topic score calculation
-- `quiz.py`: Quiz generation, regeneration, submission endpoints
-- `GET /quiz/topics`: Fetch topics by grade and subject
+**Frontend: React**
+- Component-based architecture for quiz interface
+- State management for quiz flow and results
+- Dynamic topic loading and question rendering
 
-**Frontend:**
-- `StartQuiz.jsx`: Grade/subject selection, dynamic topic loading
-- `TakeQuiz.jsx`: Reading passage formatting, multi-part handling, TTS (question-only)
-- `QuizResults.jsx`: Scores, weak topics, practice buttons, retake options
+**AI Integration:**
+- **Ollama**: Local LLM for personalized feedback (optional)
+- **Sentence Transformers**: Text embeddings for semantic search
+- **ChromaDB**: Vector similarity for finding similar questions
+
+## Component Architecture
+
+**Backend Components:**
+- `adaptive.py`: Question selection algorithm with balanced topic distribution
+- `scoring.py`: Weighted scoring system and weak topic identification
+- `vector_db.py`: ChromaDB integration for semantic question search
+- `quiz.py`: Quiz generation, submission, and retake endpoints
+
+**Frontend Components:**
+- `StartQuiz.jsx`: Grade/subject selection with dynamic topic loading
+- `TakeQuiz.jsx`: Question rendering with TTS and image support
+- `QuizResults.jsx`: Results display with question review and similar problems
+
+**Vector Database Flow:**
+1. Questions embedded using sentence transformers
+2. Stored in ChromaDB with metadata (topic, grade, subject)
+3. Semantic search finds similar questions when students make mistakes
+4. Results page shows similar problems for targeted practice
+
+**Quiz Workflow:**
+1. Generate 10 randomized questions (balanced across topics)
+2. Track answers and calculate topic-specific scores
+3. Identify weak topics (<80% accuracy)
+4. Provide similar questions using vector search
+5. Enable targeted practice on weak areas
 
 ## Question Bank
 
-**300+ questions from EOG tests:**
-- **Grade 3**: Math (5 topics, 12+ each) + Reading (5 topics, 40 questions)
-- **Grade 4**: Math + Reading (4 topics, 40 questions)
-- **Grade 5**: Math (5 topics, 12+ each) + Reading (2 topics, 40 questions)
+**300+ EOG-style questions:**
+- Grade 3: Math (5 topics) + Reading (5 topics)
+- Grade 4: Math + Reading + Geometry
+- Grade 5: Math + Reading + Free Response
 
-Questions are randomized using timestamp-based seeding. Retakes show different questions.
+**Recent Additions:**
+- Enhanced number operations (Grade 3)
+- Expanded geometry and low-topic coverage (Grade 4)
+- Additional vocabulary questions (Grade 5)
+- Visual mathematics problems with diagrams
 
 ## API Endpoints
 
-- `POST /auth/register` - Register student
-- `POST /auth/login` - Login
-- `GET /quiz/topics?grade_level=3&subject=Reading` - Get topics
-- `POST /quiz/generate` - Create quiz
-- `PUT /quiz/{id}/regenerate` - Retake (preserves subject)
-- `POST /quiz/{id}/submit` - Submit answers
-- `POST /quiz/practice-topic` - Practice weak topic
-- `GET /student/{id}/history?grade_level=3` - Get history
-- `POST /attempt/{id}/feedback` - AI feedback (optional)
+**Authentication & Quiz Management:**
+- `POST /auth/register` - User registration with validation
+- `POST /auth/login` - JWT-based authentication
+- `POST /quiz/generate` - Creates quiz with balanced topic distribution
+- `POST /quiz/{id}/submit` - Processes answers and calculates scores
+- `POST /quiz/practice-topic` - Generates targeted practice for weak topics
 
-## How It Works
+**Vector Database Integration:**
+- `POST /vector-db/sync` - Embeds and stores all questions in ChromaDB
+- `POST /vector-db/query` - Semantic search for similar questions
+- `GET /vector-db/stats` - Monitor vector database health and usage
 
-1. **Take Quiz**: Select grade/subject → 10 randomized questions (evenly distributed)
-2. **Get Results**: Topic breakdown, weak topics (<80%), mastery status
-3. **Practice**: Focus on weak topics with targeted practice quizzes
-4. **Retake**: Regenerates randomized questions, preserves subject
+**Data Flow:**
+1. Quiz submission triggers scoring algorithm
+2. Weak topics identified (<80% threshold)
+3. Vector search finds semantically similar questions
+4. Results page includes targeted practice recommendations
 
-**Scoring:**
-- Answers compared case-insensitively
-- Topic score = weighted average
-- Weak topic = score < 80%
-- Mastery = 2 consecutive perfect quizzes
+## System Workflow
 
-## Database & Infrastructure
+**1. Quiz Generation:**
+- Timestamp-based seeding ensures unique question sets
+- Adaptive algorithm balances topic distribution
+- No duplicate questions within single quiz
 
-- **Oracle Database**: Auto-creates tables, auto-seeds math questions
-- **Redis**: Caches history, mastery status (5 min TTL)
-- **Prometheus & Grafana**: Metrics at `/metrics`, dashboard at `http://localhost:3001`
+**2. Results Analysis:**
+- Case-insensitive answer comparison
+- Weighted topic scoring algorithm
+- Weak topic identification (<80% accuracy)
+- Mastery tracking (2 consecutive perfect quizzes)
 
-### Database Setup
+**3. Vector-Powered Review:**
+- Incorrect answers trigger semantic search
+- ChromaDB finds conceptually similar problems
+- Students practice question types they struggle with
+- AI-driven recommendations improve learning efficiency
 
-1. **Start Oracle DB** (Docker required):
+**4. Progress Tracking:**
+- Redis caching for fast history retrieval
+- Mastery metrics across topics and subjects
+- Admin dashboard for comprehensive analytics
+
+## Setup
+
+**Database:**
 ```bash
-docker-compose up -d oracle-db
-# Wait ~60 seconds for Oracle to initialize
+docker-compose up -d oracle-db  # Oracle DB (port 1521)
+# Create .env with DB credentials
+# Auto-seeds math questions on startup
+
+# Add reading questions
+python add_reading_questions.py           # Grade 3
+python add_grade4_reading_questions.py    # Grade 4
+python add_grade5_reading_questions.py    # Grade 5
+
+# Sync vector DB
+curl -X POST http://localhost:8000/vector-db/sync
 ```
 
-2. **Configure connection** (create `.env` file):
-```
-DB_HOST=localhost
-DB_PORT=1521
-DB_SERVICE=FREEPDB1
-DB_USER=system
-DB_PASSWORD=oracle123
-```
-
-3. **Auto-seed math questions**: Happens automatically on first backend start
-
-4. **Add reading questions** (run once per grade):
+**AI Features (Optional):**
 ```bash
-# Activate virtual environment first
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Mac/Linux
-
-# Add reading questions for each grade
-python add_reading_questions.py           # Grade 3 (40 questions)
-python add_grade4_reading_questions.py    # Grade 4 (40 questions)
-python add_grade5_reading_questions.py    # Grade 5 (40 questions)
-```
-
-5. **Verify questions**:
-```bash
-# Check question count via API
-curl http://localhost:8000/quiz/topics?grade_level=5&subject=Reading
-```
-
-## AI Features 
-
-### AI Feedback (Ollama)
-```bash
-# Install Ollama from ollama.ai
-ollama pull llama2  # or 'phi' for smaller/faster model
+# Ollama for feedback
+ollama pull llama2
 export LLM_PROVIDER=ollama
-export OLLAMA_MODEL=llama2  # or 'phi'
-# Restart backend
+
+# Vector search
+pip install chromadb sentence-transformers
 ```
-
-**Model Recommendations:**
-- **llama2**: Better quality, slower, needs ~8GB RAM
-- **phi**: Faster, smaller, needs ~4GB RAM, good for quick feedback
-
-### Text-to-Speech
-Browser TTS (built-in) - click 🔊 button. Reads questions only for reading quizzes.
-
-### Docker Services
-```bash
-# Start all services
-docker-compose up -d
-
-# Or start individually:
-docker-compose up -d oracle-db    # Oracle Database (port 1521)
-docker-compose up -d redis        # Redis cache (port 6379)
-docker-compose up -d prometheus   # Metrics collection (port 9090)
-docker-compose up -d grafana      # Dashboard (port 3001)
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs oracle-db
-```
-
-## Design Decisions
-
-1. **Randomization**: Timestamp-based seeding ensures unique question sets
-2. **No Duplicates**: Same question won't appear twice in one quiz
-3. **Even Distribution**: Questions spread evenly across all topics
-4. **Subject Preservation**: Retakes maintain original subject (Math/Reading)
-5. **Reading Formatting**: Passages with titles, authors, paragraph numbers, multi-part support
-6. **Graceful Degradation**: Works without Redis, LLM, or monitoring
