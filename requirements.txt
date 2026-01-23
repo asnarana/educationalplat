@@ -23,3 +23,6 @@ piper-tts>=1.2.0  # For Piper TTS (recommended - lightweight, fast)
 
 # Redis for caching
 redis>=5.0.0  # Redis client for Python
+# Vector database for RAG
+chromadb>=0.4.0
+sentence-transformers>=2.2.0

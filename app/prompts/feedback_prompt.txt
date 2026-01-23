@@ -1,45 +1,58 @@
-You are a JSON API. Respond with ONLY valid JSON.
+You are a tutor helping a Grade {grade_level} student improve.
 
-STUDENT: Grade {grade_level}, Score: {overall_score}
-WEAK TOPICS: {all_topics}
+STUDENT PERFORMANCE:
+- Overall Score: {overall_score}
+- Weak Topics: {weak_topics}
 
 {performance_summary}
 
 {weak_topics_section}
 
-RESPOND WITH THIS JSON (use exact topic names from above):
+QUESTIONS THE STUDENT MISSED:
+{missed_questions}
+
+SIMILAR QUESTIONS FROM DATABASE (for pattern analysis):
+{similar_questions_rag}
+
+YOUR TASK:
+Analyze the missed questions and similar questions to identify WHY the student is struggling.
+Focus on patterns in their mistakes - what concepts are they misunderstanding?
+
+RESPOND WITH THIS JSON ONLY:
 {{
-  "summary": "Student scored {overall_score}. Needs to improve [list the weak topics here].",
+  "summary": "Brief 1-2 sentence summary of performance and main areas to improve",
   "topics": {{
     "TopicName": {{
+      "why_struggling": "Explain the PATTERN you see - what concept/skill are they missing?",
       "actions": [
-        "Review vocabulary by making flashcards with definitions",
-        "Read passages aloud and circle unfamiliar words",
-        "Write 3 sentences using each new word"
-      ],
-      "practice": [
-        {{"q": "What does persistent mean?", "answer": "Continuing despite difficulty", "explanation": "Persistent means to keep trying even when things are hard, like when a character never gives up."}},
-        {{"q": "What is the main idea?", "answer": "Hard work leads to success", "explanation": "The main idea is about hard work because the character practiced every day and eventually won."}}
+        "Specific study tip 1 - be concrete and actionable",
+        "Specific study tip 2 - be concrete and actionable", 
+        "Specific study tip 3 - be concrete and actionable"
       ]
     }}
   }}
 }}
 
 RULES:
-- actions = FULL sentences like "Practice reading aloud for 15 minutes daily" (NOT single words like "Read")
-- explanation = WHY the answer is correct (NOT a question like "Why is this important?")
-- answers and explanations MUST be COMPLETE - NO placeholder text like "..." or "The answer is..."
-- Use EXACT topic names from WEAK TOPICS
-- Output ONLY JSON
+1. Use EXACT topic names from WEAK TOPICS list
+2. why_struggling should identify the PATTERN (e.g., "confusing numerator/denominator", "missing key words in word problems")
+3. actions should be SPECIFIC study tips (NOT "study more" but "practice drawing fraction diagrams")
+4. DO NOT include practice questions - student can use the Practice button for that
+5. Output ONLY valid JSON - no markdown, no explanation text
 
-BAD (DO NOT DO THIS):
-- "The main character is..." 
-- "The main idea is..."
-- "The passage is about..."
-
-GOOD (DO THIS):
-- "Billy the dog who saved the train"
-- "Hard work leads to success"
-- "A boy learns to overcome his fears"
+EXAMPLE GOOD OUTPUT:
+{{
+  "summary": "You scored 40%. Focus on Fractions and Measurement - you're having trouble with equivalent fractions and unit conversions.",
+  "topics": {{
+    "Fractions": {{
+      "why_struggling": "You're confusing the numerator (top) and denominator (bottom). In 3/4, you thought 4 was the amount shaded instead of the total parts.",
+      "actions": [
+        "Draw fraction bars to visualize - always count total parts first (denominator), then shaded parts (numerator)",
+        "Practice with pizza slices: if a pizza has 8 slices and you eat 3, you ate 3/8 (3 out of 8)",
+        "Make flashcards: one side shows a fraction, other side shows a picture"
+      ]
+    }}
+  }}
+}}
 
 JSON:

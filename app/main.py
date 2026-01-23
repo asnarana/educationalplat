@@ -7,7 +7,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.db import init_db
-from app.routes import seed, quiz, history, feedback, tts, auth, admin
+from app.routes import seed, quiz, history, feedback, tts, auth, admin, vector_db
 from app.monitoring.middleware import PrometheusMiddleware
 from app.monitoring.metrics import get_metrics, CONTENT_TYPE_LATEST
 
@@ -48,6 +48,7 @@ app.include_router(quiz.router)
 app.include_router(history.router)
 app.include_router(feedback.router)
 app.include_router(tts.router)
+app.include_router(vector_db.router)
 
 
 @app.on_event("startup")
@@ -124,6 +125,26 @@ async def startup_event():
                 print(f"ℹ️  Question bank already contains {existing_count} questions (skipping auto-seed)")
         except Exception as seed_error:
             print(f"⚠️  Could not auto-seed questions: {seed_error}")
+        
+        # Auto-sync to Vector DB (ChromaDB) for RAG pipeline
+        try:
+            from app.logic.vector_db import sync_all_from_oracle, get_collection_stats, VECTOR_DB_AVAILABLE
+            if VECTOR_DB_AVAILABLE:
+                print("🔄 Syncing questions to Vector DB (ChromaDB)...")
+                sync_result = sync_all_from_oracle(db)
+                total_synced = sum(r.get('total', 0) for r in sync_result.values())
+                print(f"✅ Vector DB synced: {total_synced} questions across 6 collections")
+                
+                # Show stats
+                stats = get_collection_stats()
+                for name, stat in stats.items():
+                    print(f"   📊 {name}: {stat.get('question_count', 0)} questions")
+            else:
+                print("ℹ️  Vector DB not available (chromadb/sentence-transformers not installed)")
+        except ImportError:
+            print("ℹ️  Vector DB module not available - RAG features disabled")
+        except Exception as vdb_error:
+            print(f"⚠️  Could not sync Vector DB: {vdb_error}")
         finally:
             db.close()
     except Exception as e:

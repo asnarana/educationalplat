@@ -1,5 +1,7 @@
 """
-Feedback generation logic using LLM for personalized study recommendations.
+Feedback generation logic using LLM with RAG for personalized study recommendations.
+
+Uses ChromaDB vector stores to retrieve similar questions for pattern analysis.
 """
 import json
 import os
@@ -9,6 +11,14 @@ from sqlalchemy.orm import Session
 from app.models import Attempt, Quiz, Question
 from app.logic.llm_provider import get_llm_provider, LLMProvider
 
+# Import vector DB for RAG
+try:
+    from app.logic.vector_db import get_similar_questions_for_missed, get_collection_stats
+    VECTOR_DB_AVAILABLE = True
+except ImportError:
+    VECTOR_DB_AVAILABLE = False
+    print("WARNING: Vector DB not available. RAG will be disabled.")
+
 
 def load_prompt_template() -> str:
     """Load the feedback prompt template."""
@@ -16,6 +26,35 @@ def load_prompt_template() -> str:
     if not template_path.exists():
         raise FileNotFoundError(f"Prompt template not found: {template_path}")
     return template_path.read_text()
+
+
+def get_missed_questions_data(attempt: Attempt, questions: List[Question]) -> List[Dict]:
+    """
+    Get data about missed questions for RAG pipeline.
+    
+    Args:
+        attempt: Attempt object with answers
+        questions: List of Question objects from the quiz
+        
+    Returns:
+        List of dicts with missed question data
+    """
+    missed = []
+    for question in questions:
+        student_answer = attempt.answers.get(question.id, "")
+        is_correct = str(student_answer).strip().lower() == str(question.correct_answer).strip().lower()
+        
+        if not is_correct:
+            missed.append({
+                "id": question.id,
+                "topic": question.topic,
+                "prompt": question.prompt,
+                "student_answer": student_answer,
+                "correct_answer": question.correct_answer,
+                "explanation": question.explanation
+            })
+    
+    return missed
 
 
 def format_missed_questions(attempt: Attempt, questions: List[Question]) -> str:
@@ -51,10 +90,11 @@ def format_missed_questions(attempt: Attempt, questions: List[Question]) -> str:
                     prompt_text = prompt_text[:500] + "..."
             
             missed.append(
+                f"Topic: {question.topic}\n"
                 f"Question: {prompt_text}\n"
-                f"Your answer: {student_answer}\n"
+                f"Student's answer: {student_answer or '(no answer)'}\n"
                 f"Correct answer: {question.correct_answer}\n"
-                f"Explanation: {question.explanation or 'No explanation provided'}\n"
+                f"Why correct: {question.explanation or 'Not provided'}\n"
             )
     
     if not missed:
@@ -68,6 +108,52 @@ def format_missed_questions(attempt: Attempt, questions: List[Question]) -> str:
         missed.append(f"\n... and {total_missed - 5} more questions were missed.")
     
     return "\n---\n".join(missed)
+
+
+def format_similar_questions_for_rag(
+    similar_questions: Dict[str, List[Dict]],
+    missed_questions: List[Dict]
+) -> str:
+    """
+    Format similar questions from vector DB for the RAG prompt.
+    
+    This shows the LLM similar questions to help it understand mistake patterns.
+    
+    Args:
+        similar_questions: Dict mapping topic -> list of similar questions from vector DB
+        missed_questions: List of questions the student missed
+        
+    Returns:
+        Formatted string for the prompt
+    """
+    if not similar_questions:
+        return "No similar questions available for pattern analysis."
+    
+    sections = []
+    
+    for topic, questions in similar_questions.items():
+        if not questions:
+            continue
+            
+        topic_section = f"SIMILAR {topic.upper()} QUESTIONS (for pattern analysis):\n"
+        
+        for i, q in enumerate(questions[:3], 1):  # Limit to 3 per topic
+            prompt = q.get("prompt", "")[:300]  # Truncate long prompts
+            if len(q.get("prompt", "")) > 300:
+                prompt += "..."
+            
+            topic_section += f"""
+{i}. Question: {prompt}
+   Answer: {q.get('correct_answer', 'N/A')}
+   Concept: {q.get('explanation', 'N/A')[:150]}
+"""
+        
+        sections.append(topic_section)
+    
+    if not sections:
+        return "No similar questions available for pattern analysis."
+    
+    return "\n".join(sections)
 
 
 def format_performance_summary(attempt: Attempt, all_topics: List[str]) -> str:
@@ -132,15 +218,17 @@ def format_strong_topics_section(attempt: Attempt, all_topics: List[str]) -> str
 def generate_feedback_prompt(
     attempt: Attempt,
     quiz: Quiz,
-    questions: List[Question]
+    questions: List[Question],
+    similar_questions_rag: str = ""
 ) -> str:
     """
-    Generate the full prompt for LLM feedback generation.
+    Generate the full prompt for LLM feedback generation with RAG.
     
     Args:
         attempt: Attempt object
         quiz: Quiz object
         questions: List of Question objects
+        similar_questions_rag: Formatted similar questions from vector DB
         
     Returns:
         Formatted prompt string
@@ -157,7 +245,6 @@ def generate_feedback_prompt(
     
     # Determine which topics to focus on
     focus_topics = attempt.weak_topics if attempt.weak_topics else all_topics
-    focus_label = "weak topics" if attempt.weak_topics else "all topics (review plan)"
     
     # Build prompt
     overall_score_pct = f"{attempt.score_total * 100:.1f}%"
@@ -165,10 +252,12 @@ def generate_feedback_prompt(
         grade_level=quiz.grade_level,
         overall_score=overall_score_pct,
         all_topics=", ".join(all_topics),
+        weak_topics=", ".join(attempt.weak_topics) if attempt.weak_topics else "None",
         performance_summary=performance_summary,
         weak_topics_section=weak_topics_section,
         strong_topics_section=strong_topics_section,
-        missed_questions=missed_questions
+        missed_questions=missed_questions,
+        similar_questions_rag=similar_questions_rag or "No similar questions available."
     )
     
     return prompt
@@ -362,7 +451,13 @@ def generate_feedback(
     llm_provider: LLMProvider = None
 ) -> Dict[str, Any]:
     """
-    Generate personalized feedback using LLM.
+    Generate personalized feedback using LLM with RAG pipeline.
+    
+    RAG Pipeline:
+    1. Get missed questions from the attempt
+    2. Query vector DB for similar questions (semantic search)
+    3. Augment prompt with similar questions for pattern analysis
+    4. LLM analyzes patterns and generates study recommendations
     
     Args:
         attempt: Attempt object
@@ -376,11 +471,8 @@ def generate_feedback(
             "summary": "...",
             "topics": {
                 "TopicName": {
-                    "actions": ["...", "...", "..."],
-                    "practice": [
-                        {"q": "...", "answer": "...", "explanation": "..."},
-                        ...
-                    ]
+                    "why_struggling": "...",
+                    "actions": ["...", "...", "..."]
                 }
             }
         }
@@ -388,8 +480,42 @@ def generate_feedback(
     if llm_provider is None:
         llm_provider = get_llm_provider()
     
-    # Generate prompt
-    prompt = generate_feedback_prompt(attempt, quiz, questions)
+    # RAG Step 1: Get missed questions
+    missed_questions_data = get_missed_questions_data(attempt, questions)
+    
+    # RAG Step 2: Query vector DB for similar questions
+    similar_questions_rag = ""
+    if VECTOR_DB_AVAILABLE and missed_questions_data:
+        try:
+            # Determine subject based on topic keywords
+            math_keywords = ['addition', 'subtraction', 'multiplication', 'division', 'fraction', 
+                           'algebra', 'geometry', 'decimal', 'percentage', 'word problem',
+                           'measurement', 'number operations', 'operations']
+            
+            first_topic = missed_questions_data[0].get("topic", "").lower()
+            subject = "Math" if any(kw in first_topic for kw in math_keywords) else "Reading"
+            
+            # Get similar questions from vector DB
+            similar_by_topic = get_similar_questions_for_missed(
+                missed_questions=missed_questions_data,
+                grade_level=quiz.grade_level,
+                subject=subject,
+                n_per_question=3
+            )
+            
+            # Format for prompt
+            similar_questions_rag = format_similar_questions_for_rag(
+                similar_by_topic,
+                missed_questions_data
+            )
+            
+            print(f"[RAG] Retrieved similar questions for {len(similar_by_topic)} topics")
+        except Exception as e:
+            print(f"[RAG] Warning: Could not retrieve similar questions: {e}")
+            similar_questions_rag = ""
+    
+    # RAG Step 3: Generate prompt with augmented context
+    prompt = generate_feedback_prompt(attempt, quiz, questions, similar_questions_rag)
     
     # Debug: Log prompt (first 500 chars) to help diagnose issues
     print(f"[DEBUG] Feedback prompt preview (first 500 chars):\n{prompt[:500]}...")
@@ -448,8 +574,8 @@ def generate_feedback(
     for actual_topic in actual_topics:
         if actual_topic not in valid_topics:
             valid_topics[actual_topic] = {
-                "actions": [],
-                "practice": []
+                "why_struggling": f"Review {actual_topic} concepts and practice more.",
+                "actions": []
             }
     
     # Update feedback with validated topics
@@ -459,8 +585,8 @@ def generate_feedback(
     for topic_name, topic_data in feedback["topics"].items():
         if "actions" not in topic_data:
             topic_data["actions"] = []
-        if "practice" not in topic_data:
-            topic_data["practice"] = []
+        if "why_struggling" not in topic_data:
+            topic_data["why_struggling"] = f"You need more practice with {topic_name} concepts."
         
         # Filter out empty actions and single-word actions (they should be full sentences)
         def is_valid_action(a):
@@ -477,7 +603,7 @@ def generate_feedback(
         # Ensure actions is a list of exactly 3 (fill with meaningful defaults if needed)
         default_actions = [
             f"Review {topic_name} concepts by re-reading your notes and textbook",
-            f"Practice {topic_name} by completing 5-10 similar questions each day",
+            f"Practice {topic_name} using the Practice button to get questions from the database",
             f"Ask your teacher or a classmate to explain {topic_name} concepts you find confusing"
         ]
         
@@ -491,82 +617,10 @@ def generate_feedback(
         
         topic_data["actions"] = topic_data["actions"][:3]
         
-        # Filter out empty practice questions and ones with placeholder "..." answers
-        def is_placeholder(text):
-            """Check if text is a placeholder like 'The answer is...' or 'The main idea is...'"""
-            if not text:
-                return True
-            text = text.strip()
-            # Check for common placeholder patterns
-            if text.endswith("..."):
-                return True
-            if "..." in text and len(text) < 50:
-                return True
-            if text.lower().startswith(("the main", "the character", "the answer", "the passage", "sure,")):
-                if "..." in text or text.endswith("is") or len(text.split()) < 5:
-                    return True
-            return False
-        
-        # Filter out practice questions with placeholder answers
-        topic_data["practice"] = [
-            p for p in topic_data["practice"] 
-            if p and isinstance(p, dict) and p.get("q") and p.get("answer") 
-            and p.get("q").strip() and p.get("answer").strip()
-            and not is_placeholder(p.get("answer", ""))
-        ]
-        
-        # Fix explanations that are questions or placeholders
-        for practice in topic_data["practice"]:
-            explanation = practice.get("explanation", "")
-            answer = practice.get("answer", "")
-            
-            # Check if explanation is bad (question, placeholder, or too short)
-            needs_fix = False
-            if not explanation or len(explanation.strip()) < 10:
-                needs_fix = True
-            elif explanation.strip().endswith("?"):
-                needs_fix = True
-            elif explanation.strip().startswith(("Why ", "How ", "What ")):
-                needs_fix = True
-            elif "..." in explanation:
-                needs_fix = True
-            elif is_placeholder(explanation):
-                needs_fix = True
-            
-            if needs_fix:
-                # Replace with a proper explanation based on the answer
-                if answer and not is_placeholder(answer):
-                    practice["explanation"] = f"This answer is correct because it accurately describes {topic_name.lower()}. {answer}."
-                else:
-                    practice["explanation"] = f"Review {topic_name} concepts in your textbook and practice with similar questions."
-        
-        # Ensure practice is a list of exactly 2 (fill with meaningful defaults if needed)
-        default_practice = [
-            {
-                "q": f"What is an important concept in {topic_name}?",
-                "answer": "Review your notes and textbook",
-                "explanation": f"Focus on understanding {topic_name} concepts. Review the material and practice with similar questions."
-            },
-            {
-                "q": f"How can you improve your {topic_name} skills?",
-                "answer": "Practice regularly and ask for help",
-                "explanation": f"Practice {topic_name} regularly, review missed questions, and ask your teacher for clarification when needed."
-            }
-        ]
-        
-        while len(topic_data["practice"]) < 2:
-            # Use default practice questions that haven't been used yet
-            default_idx = len(topic_data["practice"])
-            if default_idx < len(default_practice):
-                topic_data["practice"].append(default_practice[default_idx])
-            else:
-                topic_data["practice"].append({
-                    "q": f"Practice question about {topic_name}",
-                    "answer": "Review the material",
-                    "explanation": f"Continue practicing {topic_name} to improve your understanding."
-                })
-        
-        topic_data["practice"] = topic_data["practice"][:2]
+        # Remove practice field if present (we don't generate practice questions anymore)
+        # Practice questions come from Oracle DB via the Practice Topic button
+        if "practice" in topic_data:
+            del topic_data["practice"]
     
     return feedback
 
