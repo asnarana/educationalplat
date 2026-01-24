@@ -62,6 +62,40 @@ Access at `http://localhost:5173`
 - **Sentence Transformers**: Text embeddings for semantic search
 - **ChromaDB**: Vector similarity for finding similar questions
 
+## ChromaDB Vector System
+
+**Vector Embeddings Process:**
+- Each question text is converted to 384-dimensional vector using `all-MiniLM-L6-v2` model
+- Embeddings capture semantic meaning, not just keyword matching
+- Questions with similar concepts have close vector distances regardless of exact wording
+
+**ChromaDB Architecture:**
+- 6 separate collections: `grade3_math`, `grade3_reading`, `grade4_math`, `grade4_reading`, `grade5_math`, `grade5_reading`
+- Each collection stores vectors with metadata: question_id, topic, grade_level, subject, difficulty
+- Persistent storage in `./chroma_db` directory
+- Automatic indexing for fast similarity search
+
+**Semantic Search Workflow:**
+1. Student answers question incorrectly
+2. System embeds the question text using same transformer model
+3. ChromaDB queries for top 5 most similar vectors within same topic/grade
+4. Similarity score calculated (1 - cosine distance)
+5. Returns questions with high semantic similarity for practice
+
+**Example Use Case:**
+- Student fails "What is 15% of 80?" (fractions/percentages topic)
+- Vector search finds similar questions:
+  - "Calculate 25% of 120" (same concept, different numbers)
+  - "Find 30% of 150" (similar percentage calculation)
+  - "What fraction is equivalent to 0.75?" (related concept)
+
+**Technical Benefits:**
+- Conceptual similarity vs keyword matching
+- Grade and topic-aware filtering
+- Fast retrieval (<100ms for typical queries)
+- Scalable to thousands of questions
+- Enables AI-driven practice recommendations
+
 ## Component Architecture
 
 **Backend Components:**
