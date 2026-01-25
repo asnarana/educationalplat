@@ -545,6 +545,19 @@ def generate_feedback(
     # Get actual topics from the attempt
     actual_topics = attempt.weak_topics if attempt.weak_topics else list(set([q.topic for q in questions]))
     
+    # Ensure summary mentions all weak topics
+    if actual_topics:
+        summary = feedback.get("summary", "")
+        mentioned_topics = [t for t in actual_topics if t.lower() in summary.lower()]
+        missing_from_summary = [t for t in actual_topics if t.lower() not in summary.lower()]
+        
+        if missing_from_summary:
+            # Rebuild summary to include all weak topics
+            score_pct = f"{attempt.score_total * 100:.0f}%"
+            all_topics_str = ", ".join(actual_topics)
+            feedback["summary"] = f"You scored {score_pct}%. Focus on {all_topics_str} - review the specific recommendations below for each topic."
+            print(f"[DEBUG] Updated summary to include all {len(actual_topics)} weak topics")
+    
     # Validate that feedback topics match actual topics (case-insensitive)
     feedback_topics = list(feedback["topics"].keys())
     actual_topics_lower = [t.lower() for t in actual_topics]
@@ -600,12 +613,53 @@ def generate_feedback(
         
         topic_data["actions"] = [a.strip() for a in topic_data["actions"] if is_valid_action(a)]
         
-        # Ensure actions is a list of exactly 3 (fill with meaningful defaults if needed)
-        default_actions = [
-            f"Review {topic_name} concepts by re-reading your notes and textbook",
-            f"Practice {topic_name} using the Practice button to get questions from the database",
-            f"Ask your teacher or a classmate to explain {topic_name} concepts you find confusing"
-        ]
+        # Topic-specific default actions based on common math/reading topics
+        topic_lower = topic_name.lower()
+        
+        # Define more helpful defaults based on topic type
+        if "fraction" in topic_lower:
+            default_actions = [
+                "Draw fraction bars or pie charts to visualize parts of a whole",
+                "Practice identifying numerator (top = parts you have) and denominator (bottom = total parts)",
+                "Use real objects like pizza slices or blocks to model fraction problems"
+            ]
+        elif "geometry" in topic_lower:
+            default_actions = [
+                "Create a reference chart of shapes with their properties (sides, angles, parallel lines)",
+                "Practice identifying shapes in real-world objects around your home",
+                "Draw and label shapes, marking equal sides and right angles"
+            ]
+        elif "measurement" in topic_lower:
+            default_actions = [
+                "Create a conversion chart for common units (inches to feet, cups to quarts, etc.)",
+                "Practice measuring real objects with a ruler or measuring tape",
+                "Use visual aids: draw number lines to help convert between units"
+            ]
+        elif "operation" in topic_lower or "number" in topic_lower:
+            default_actions = [
+                "Use visual aids: draw diagrams, number lines, or use manipulatives for each step",
+                "Practice mental math by breaking large numbers into smaller parts",
+                "Show all your work and check answers by using the inverse operation"
+            ]
+        elif "reading" in topic_lower or "comprehension" in topic_lower:
+            default_actions = [
+                "Read the passage twice: first for the main idea, then for details",
+                "Underline or highlight key information as you read",
+                "Before answering, go back to the passage to find evidence for your answer"
+            ]
+        elif "vocabulary" in topic_lower:
+            default_actions = [
+                "Look for context clues in the sentence before and after unknown words",
+                "Break words into parts (prefixes, roots, suffixes) to guess meaning",
+                "Keep a vocabulary journal and review new words daily"
+            ]
+        else:
+            # Generic but still useful defaults
+            default_actions = [
+                f"Break down {topic_name} problems into smaller steps and solve one step at a time",
+                f"Practice {topic_name} using the Practice button to get targeted questions",
+                f"Work through examples slowly, writing out each step before checking answers"
+            ]
         
         while len(topic_data["actions"]) < 3:
             # Use default actions that haven't been used yet
@@ -613,7 +667,7 @@ def generate_feedback(
             if default_idx < len(default_actions):
                 topic_data["actions"].append(default_actions[default_idx])
             else:
-                topic_data["actions"].append(f"Continue practicing {topic_name} to improve")
+                topic_data["actions"].append(f"Continue practicing {topic_name} to build confidence")
         
         topic_data["actions"] = topic_data["actions"][:3]
         

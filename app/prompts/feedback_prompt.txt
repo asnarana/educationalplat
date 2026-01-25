@@ -15,44 +15,62 @@ SIMILAR QUESTIONS FROM DATABASE (for pattern analysis):
 {similar_questions_rag}
 
 YOUR TASK:
-Analyze the missed questions and similar questions to identify WHY the student is struggling.
-Focus on patterns in their mistakes - what concepts are they misunderstanding?
+1. ANALYZE the missed questions AND the similar questions from the database to identify PATTERNS in the student's mistakes
+2. For EACH weak topic, explain WHY they are struggling based on patterns you see in their wrong answers
+3. Generate specific, actionable study tips based on the concepts they are misunderstanding
+
+CRITICAL: You MUST include ALL of these weak topics in your response: {weak_topics}
+Do NOT skip any topic. Each topic needs its own specific feedback.
+
+Use the SIMILAR QUESTIONS section above to understand what concepts are being tested and identify patterns in what the student doesn't understand.
 
 RESPOND WITH THIS JSON ONLY:
 {{
-  "summary": "Brief 1-2 sentence summary of performance and main areas to improve",
+  "summary": "1-2 sentences mentioning ALL weak topics: {weak_topics}",
   "topics": {{
     "TopicName": {{
-      "why_struggling": "Explain the PATTERN you see - what concept/skill are they missing?",
+      "why_struggling": "What specific concept/skill is the student missing for THIS topic?",
       "actions": [
-        "Specific study tip 1 - be concrete and actionable",
-        "Specific study tip 2 - be concrete and actionable", 
-        "Specific study tip 3 - be concrete and actionable"
+        "Specific actionable tip 1 for THIS topic",
+        "Specific actionable tip 2 for THIS topic", 
+        "Specific actionable tip 3 for THIS topic"
       ]
     }}
   }}
 }}
 
 RULES:
-1. Use EXACT topic names from WEAK TOPICS list
-2. why_struggling should identify the PATTERN (e.g., "confusing numerator/denominator", "missing key words in word problems")
-3. actions should be SPECIFIC study tips (NOT "study more" but "practice drawing fraction diagrams")
-4. DO NOT include practice questions - student can use the Practice button for that
-5. Output ONLY valid JSON - no markdown, no explanation text
+1. MANDATORY: Include EVERY topic from this list: {weak_topics}
+2. Use EXACT topic names - copy them exactly as shown above
+3. ANALYZE the similar questions to understand the underlying concepts being tested
+4. why_struggling should identify the PATTERN you see (e.g., "confusing numerator/denominator", "missing key words in word problems")
+5. Each topic needs 3 SPECIFIC actions based on the patterns you identified (not generic "study more" advice)
+6. The summary MUST mention ALL weak topics, not just some
+7. Output ONLY valid JSON - no markdown, no extra text
 
-EXAMPLE GOOD OUTPUT:
+EXAMPLE (if weak topics are Fractions, Geometry):
 {{
-  "summary": "You scored 40%. Focus on Fractions and Measurement - you're having trouble with equivalent fractions and unit conversions.",
+  "summary": "You scored 40%. You need to work on Fractions and Geometry - practice fraction diagrams and shape properties.",
   "topics": {{
     "Fractions": {{
-      "why_struggling": "You're confusing the numerator (top) and denominator (bottom). In 3/4, you thought 4 was the amount shaded instead of the total parts.",
+      "why_struggling": "Confusing numerator and denominator positions",
       "actions": [
-        "Draw fraction bars to visualize - always count total parts first (denominator), then shaded parts (numerator)",
-        "Practice with pizza slices: if a pizza has 8 slices and you eat 3, you ate 3/8 (3 out of 8)",
-        "Make flashcards: one side shows a fraction, other side shows a picture"
+        "Draw fraction bars - count total parts first (denominator), then shaded (numerator)",
+        "Use pizza examples: 3 slices eaten from 8 total = 3/8",
+        "Make flashcards with fraction on one side, picture on other"
+      ]
+    }},
+    "Geometry": {{
+      "why_struggling": "Not recognizing shape properties like parallel sides",
+      "actions": [
+        "Create a shape chart listing properties of each shape",
+        "Trace shapes and mark parallel sides with colored arrows",
+        "Practice identifying shapes in real objects around you"
       ]
     }}
   }}
 }}
+
+Generate feedback for ALL weak topics: {weak_topics}
 
 JSON:
