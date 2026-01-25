@@ -246,6 +246,13 @@ def generate_feedback_prompt(
     # Determine which topics to focus on
     focus_topics = attempt.weak_topics if attempt.weak_topics else all_topics
     
+    # Generate topics JSON hint to show exact structure with real topic names
+    # This helps smaller LLMs understand the expected output format
+    topics_hint_parts = []
+    for topic in focus_topics:
+        topics_hint_parts.append(f'"{topic}":{{"why_struggling":"...","actions":["tip1","tip2","tip3"]}}')
+    topics_json_hint = ",".join(topics_hint_parts)
+    
     # Build prompt
     overall_score_pct = f"{attempt.score_total * 100:.1f}%"
     prompt = template.format(
@@ -257,7 +264,8 @@ def generate_feedback_prompt(
         weak_topics_section=weak_topics_section,
         strong_topics_section=strong_topics_section,
         missed_questions=missed_questions,
-        similar_questions_rag=similar_questions_rag or "No similar questions available."
+        similar_questions_rag=similar_questions_rag or "No similar questions available.",
+        topics_json_hint=topics_json_hint
     )
     
     return prompt
@@ -487,21 +495,62 @@ def generate_feedback(
     similar_questions_rag = ""
     if VECTOR_DB_AVAILABLE and missed_questions_data:
         try:
-            # Determine subject based on topic keywords
+            # Subject keywords for classification
             math_keywords = ['addition', 'subtraction', 'multiplication', 'division', 'fraction', 
                            'algebra', 'geometry', 'decimal', 'percentage', 'word problem',
                            'measurement', 'number operations', 'operations']
+            reading_keywords = ['vocabulary', 'reading', 'comprehension', 'character', 'main idea',
+                              'text structure', 'inference', 'word meaning', 'context clues',
+                              'author', 'passage', 'literary', 'figurative']
             
-            first_topic = missed_questions_data[0].get("topic", "").lower()
-            subject = "Math" if any(kw in first_topic for kw in math_keywords) else "Reading"
+            # Classify ALL missed questions by subject
+            math_questions = []
+            reading_questions = []
             
-            # Get similar questions from vector DB
-            similar_by_topic = get_similar_questions_for_missed(
-                missed_questions=missed_questions_data,
-                grade_level=quiz.grade_level,
-                subject=subject,
-                n_per_question=3
-            )
+            for q in missed_questions_data:
+                topic_lower = q.get("topic", "").lower()
+                prompt_lower = q.get("prompt", "").lower()
+                
+                # Check if it's a Math or Reading question
+                is_math = any(kw in topic_lower for kw in math_keywords)
+                is_reading = any(kw in topic_lower for kw in reading_keywords)
+                
+                # Also check prompt for reading passages (they typically have "read" or "passage")
+                if not is_math and not is_reading:
+                    if "read the" in prompt_lower or "passage" in prompt_lower or "according to" in prompt_lower:
+                        is_reading = True
+                    else:
+                        # Default to Math if unclear
+                        is_math = True
+                
+                if is_reading:
+                    reading_questions.append(q)
+                else:
+                    math_questions.append(q)
+            
+            similar_by_topic = {}
+            
+            # Query Math vector store for Math questions
+            if math_questions:
+                math_similar = get_similar_questions_for_missed(
+                    missed_questions=math_questions,
+                    grade_level=quiz.grade_level,
+                    subject="Math",
+                    n_per_question=3
+                )
+                similar_by_topic.update(math_similar)
+                print(f"[RAG] Retrieved Math similar questions for {len(math_similar)} topics")
+            
+            # Query Reading vector store for Reading questions
+            if reading_questions:
+                reading_similar = get_similar_questions_for_missed(
+                    missed_questions=reading_questions,
+                    grade_level=quiz.grade_level,
+                    subject="Reading",
+                    n_per_question=3
+                )
+                similar_by_topic.update(reading_similar)
+                print(f"[RAG] Retrieved Reading similar questions for {len(reading_similar)} topics")
             
             # Format for prompt
             similar_questions_rag = format_similar_questions_for_rag(
@@ -509,7 +558,7 @@ def generate_feedback(
                 missed_questions_data
             )
             
-            print(f"[RAG] Retrieved similar questions for {len(similar_by_topic)} topics")
+            print(f"[RAG] Total: Retrieved similar questions for {len(similar_by_topic)} topics")
         except Exception as e:
             print(f"[RAG] Warning: Could not retrieve similar questions: {e}")
             similar_questions_rag = ""
@@ -545,18 +594,23 @@ def generate_feedback(
     # Get actual topics from the attempt
     actual_topics = attempt.weak_topics if attempt.weak_topics else list(set([q.topic for q in questions]))
     
-    # Ensure summary mentions all weak topics
-    if actual_topics:
-        summary = feedback.get("summary", "")
-        mentioned_topics = [t for t in actual_topics if t.lower() in summary.lower()]
-        missing_from_summary = [t for t in actual_topics if t.lower() not in summary.lower()]
-        
-        if missing_from_summary:
-            # Rebuild summary to include all weak topics
-            score_pct = f"{attempt.score_total * 100:.0f}%"
-            all_topics_str = ", ".join(actual_topics)
-            feedback["summary"] = f"You scored {score_pct}%. Focus on {all_topics_str} - review the specific recommendations below for each topic."
-            print(f"[DEBUG] Updated summary to include all {len(actual_topics)} weak topics")
+    # Always ensure summary has the correct score and mentions all topics
+    actual_score_pct = f"{attempt.score_total * 100:.0f}%"
+    summary = feedback.get("summary", "")
+    
+    # Check if summary has wrong score (e.g., copied from example)
+    # Common wrong scores that LLMs copy from examples
+    wrong_scores = ["40%", "50%", "60%", "70%", "80%"]
+    has_wrong_score = any(ws in summary for ws in wrong_scores) and actual_score_pct not in summary
+    
+    # Check if all topics are mentioned
+    missing_from_summary = [t for t in actual_topics if t.lower() not in summary.lower()] if actual_topics else []
+    
+    if has_wrong_score or missing_from_summary:
+        # Rebuild summary with correct score and all topics
+        all_topics_str = ", ".join(actual_topics) if actual_topics else "the topics below"
+        feedback["summary"] = f"You scored {actual_score_pct}. Focus on {all_topics_str} - review the specific recommendations below for each topic."
+        print(f"[DEBUG] Fixed summary: correct score={actual_score_pct}, topics={len(actual_topics)}")
     
     # Validate that feedback topics match actual topics (case-insensitive)
     feedback_topics = list(feedback["topics"].keys())
@@ -581,7 +635,8 @@ def generate_feedback(
                 valid_topics[matching_actual] = topic_data
             else:
                 # Topic doesn't match - skip it
-                print(f"Warning: LLM generated topic '{topic_name}' that doesn't match actual topics: {actual_topics}")
+                # Topic doesn't match - will use defaults (this is expected with smaller LLMs)
+                pass
     
     # Add missing topics with default structure
     for actual_topic in actual_topics:
@@ -601,13 +656,28 @@ def generate_feedback(
         if "why_struggling" not in topic_data:
             topic_data["why_struggling"] = f"You need more practice with {topic_name} concepts."
         
-        # Filter out empty actions and single-word actions (they should be full sentences)
+        # Filter out empty actions, short actions, and actions with math equations
         def is_valid_action(a):
             if not a or not isinstance(a, str):
                 return False
             a = a.strip()
             # Reject if too short (single word or just a couple words)
-            if len(a.split()) < 3:
+            if len(a.split()) < 4:
+                return False
+            # Reject if it contains math equations (signs that LLM is generating nonsense)
+            # Look for patterns like "15 + 7 = 22" or "24 - 9 = 15"
+            import re
+            math_equation_pattern = r'\d+\s*[\+\-\*\/\=]\s*\d+\s*[\=]?\s*\d*'
+            if re.search(math_equation_pattern, a):
+                print(f"[DEBUG] Rejecting action with math equation: {a[:50]}...")
+                return False
+            # Reject if it has "..." suggesting copied/incomplete content
+            if "..." in a and a.count("...") > 1:
+                print(f"[DEBUG] Rejecting action with multiple ellipses: {a[:50]}...")
+                return False
+            # Reject if it looks like a random calculation
+            if re.search(r':\s*\d+\s*(apples|oranges|items|things)', a, re.IGNORECASE):
+                print(f"[DEBUG] Rejecting action with random calculation: {a[:50]}...")
                 return False
             return True
         
@@ -647,11 +717,47 @@ def generate_feedback(
                 "Underline or highlight key information as you read",
                 "Before answering, go back to the passage to find evidence for your answer"
             ]
-        elif "vocabulary" in topic_lower:
+        elif "vocabulary" in topic_lower or "word meaning" in topic_lower or "context" in topic_lower:
             default_actions = [
-                "Look for context clues in the sentence before and after unknown words",
+                "Look for context clues in the sentences before and after unknown words",
                 "Break words into parts (prefixes, roots, suffixes) to guess meaning",
                 "Keep a vocabulary journal and review new words daily"
+            ]
+        elif "main idea" in topic_lower or "central" in topic_lower:
+            default_actions = [
+                "Ask yourself: What is this passage mostly about? That's the main idea",
+                "Look at the first and last sentences of paragraphs - they often state the main idea",
+                "Eliminate answer choices that are too specific (details) or too broad"
+            ]
+        elif "inference" in topic_lower:
+            default_actions = [
+                "Use clues from the text plus what you already know to make inferences",
+                "Ask: What is the author suggesting but not directly saying?",
+                "Look for words like 'probably', 'suggests', 'implies' in questions"
+            ]
+        elif "character" in topic_lower:
+            default_actions = [
+                "Pay attention to what characters say, do, and think",
+                "Look for how characters change from the beginning to end of the story",
+                "Notice how other characters react to or describe the character"
+            ]
+        elif "text structure" in topic_lower or "structure" in topic_lower:
+            default_actions = [
+                "Learn the 5 main text structures: cause/effect, compare/contrast, sequence, problem/solution, description",
+                "Look for signal words: 'because' (cause/effect), 'first/then' (sequence), 'however' (compare/contrast)",
+                "Ask: How did the author organize this information and why?"
+            ]
+        elif "author" in topic_lower or "purpose" in topic_lower:
+            default_actions = [
+                "Ask: Is the author trying to inform, persuade, or entertain?",
+                "Look at word choice - positive/negative words reveal author's attitude",
+                "Consider: Who is the intended audience for this text?"
+            ]
+        elif "figurative" in topic_lower or "literary" in topic_lower:
+            default_actions = [
+                "Learn common figurative language: simile (like/as), metaphor, personification, hyperbole",
+                "Ask: Is the author speaking literally or comparing something to something else?",
+                "Look for unusual word combinations that don't make literal sense"
             ]
         else:
             # Generic but still useful defaults

@@ -24,53 +24,44 @@ Do NOT skip any topic. Each topic needs its own specific feedback.
 
 Use the SIMILAR QUESTIONS section above to understand what concepts are being tested and identify patterns in what the student doesn't understand.
 
+IMPORTANT: The student's actual score is {overall_score} - use THIS score in your summary, not any example score!
+
 RESPOND WITH THIS JSON ONLY:
 {{
-  "summary": "1-2 sentences mentioning ALL weak topics: {weak_topics}",
+  "summary": "You scored {overall_score}. [Then mention ALL weak topics and brief advice]",
   "topics": {{
-    "TopicName": {{
-      "why_struggling": "What specific concept/skill is the student missing for THIS topic?",
-      "actions": [
-        "Specific actionable tip 1 for THIS topic",
-        "Specific actionable tip 2 for THIS topic", 
-        "Specific actionable tip 3 for THIS topic"
-      ]
-    }}
+    {topics_json_hint}
   }}
 }}
 
 RULES:
 1. MANDATORY: Include EVERY topic from this list: {weak_topics}
 2. Use EXACT topic names - copy them exactly as shown above
-3. ANALYZE the similar questions to understand the underlying concepts being tested
-4. why_struggling should identify the PATTERN you see (e.g., "confusing numerator/denominator", "missing key words in word problems")
-5. Each topic needs 3 SPECIFIC actions based on the patterns you identified (not generic "study more" advice)
-6. The summary MUST mention ALL weak topics, not just some
-7. Output ONLY valid JSON - no markdown, no extra text
+3. MANDATORY: Use the actual score {overall_score} in your summary - DO NOT use 40% or any other made-up number
+4. ANALYZE the similar questions to understand the underlying concepts being tested
+5. why_struggling should identify the PATTERN you see (e.g., "confusing numerator/denominator", "missing key words in word problems")
+6. actions must be STUDY TECHNIQUES (like "draw diagrams", "use flashcards", "practice with objects") - NOT math problems or equations
+7. DO NOT write math examples like "15 + 7 = 22" in actions - only describe study methods
+8. Output ONLY valid JSON - no markdown, no extra text
 
-EXAMPLE (if weak topics are Fractions, Geometry):
-{{
-  "summary": "You scored 40%. You need to work on Fractions and Geometry - practice fraction diagrams and shape properties.",
-  "topics": {{
-    "Fractions": {{
-      "why_struggling": "Confusing numerator and denominator positions",
-      "actions": [
-        "Draw fraction bars - count total parts first (denominator), then shaded (numerator)",
-        "Use pizza examples: 3 slices eaten from 8 total = 3/8",
-        "Make flashcards with fraction on one side, picture on other"
-      ]
-    }},
-    "Geometry": {{
-      "why_struggling": "Not recognizing shape properties like parallel sides",
-      "actions": [
-        "Create a shape chart listing properties of each shape",
-        "Trace shapes and mark parallel sides with colored arrows",
-        "Practice identifying shapes in real objects around you"
-      ]
-    }}
-  }}
-}}
+GOOD MATH action examples:
+- "Draw fraction bars to visualize parts of a whole"
+- "Use a number line to check addition and subtraction"
+- "Create flashcards for multiplication facts"
+- "Practice with real objects like coins or blocks"
 
-Generate feedback for ALL weak topics: {weak_topics}
+GOOD READING action examples:
+- "Read the passage twice - first for main idea, then for details"
+- "Underline key information and evidence as you read"
+- "Look for context clues before and after unknown words"
+- "Ask: What is the author trying to tell me?"
+
+BAD action examples (DO NOT DO THIS):
+- "15 + 7 = 22" or any math equations
+- "Counting: 24 - 9 = 15" (not a study technique)
+- Random calculations or numbers
+- Just restating the question
+
+REMEMBER: Score is {overall_score}, weak topics are {weak_topics}
 
 JSON:
